@@ -1,31 +1,28 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
+import 'package:co_caro/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:co_caro/main.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() {
-  testWidgets('Caro Game smoke test', (WidgetTester tester) async {
-    // Thiết lập kích thước màn hình giả lập lớn hơn để tránh tràn viền khi chạy test
+  testWidgets('Login screen smoke test', (WidgetTester tester) async {
+    WidgetsFlutterBinding.ensureInitialized();
+    await Supabase.initialize(
+      url: 'https://caddicxvszitasqahdck.supabase.co',
+      publishableKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhZGRpY3h2c3ppdGFzcWFoZGNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA3MTcwMjYsImV4cCI6MjA5NjI5MzAyNn0.GmPJHIrFkFtruwmqsQioDN2atv1VApV68y_qG1dd4TA',
+    );
+
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
 
-    // Build our app and trigger a frame.
     await tester.pumpWidget(const MyApp());
 
-    // Verify that the game header title is displayed.
-    expect(find.text('CARO CHAMPION'), findsOneWidget);
+    expect(find.text('Dang nhap'), findsAtLeastNWidgets(1));
+    expect(find.text('Email'), findsOneWidget);
+    expect(find.text('Mat khau'), findsOneWidget);
 
-    // Verify that the turn indicator is displayed.
-    expect(find.textContaining('Lượt đi:'), findsOneWidget);
-
-    // Verify that the scoreboard labels are displayed.
-    expect(find.text('X Thắng'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+    await Supabase.instance.dispose();
   });
 }

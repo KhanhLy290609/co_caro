@@ -1,11 +1,17 @@
 // ignore_for_file: deprecated_member_use, avoid_print, use_build_context_synchronously
 
 import 'dart:async';
-import 'dart:convert';
-import 'package:flutter/material.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
 
-void main() {
+import 'dart:math';
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Supabase.initialize(
+    url: 'https://caddicxvszitasqahdck.supabase.co',
+    publishableKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNhZGRpY3h2c3ppdGFzcWFoZGNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA3MTcwMjYsImV4cCI6MjA5NjI5MzAyNn0.GmPJHIrFkFtruwmqsQioDN2atv1VApV68y_qG1dd4TA',
+  );
   runApp(const MyApp());
 }
 
@@ -28,12 +34,253 @@ class MyApp extends StatelessWidget {
           surface: Color(0xFF1E293B), // Màu nền thẻ Slate-800
         ),
       ),
-      home: const CaroGamePage(),
+      home: const AuthGate(),
     );
   }
 }
 
 /// Lớp đại diện cho một nước đi, dùng để lưu lịch sử phục vụ chức năng đi lại (Undo).
+class AuthGate extends StatefulWidget {
+  const AuthGate({super.key});
+
+  @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  final SupabaseClient _supabase = Supabase.instance.client;
+  StreamSubscription<AuthState>? _authSubscription;
+  Session? _session;
+
+  @override
+  void initState() {
+    super.initState();
+    _session = _supabase.auth.currentSession;
+    _authSubscription = _supabase.auth.onAuthStateChange.listen((data) {
+      if (!mounted) return;
+      setState(() {
+        _session = data.session;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_session == null) {
+      return const LoginPage();
+    }
+
+    return const CaroGamePage();
+  }
+}
+
+class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
+
+  @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  final SupabaseClient _supabase = Supabase.instance.client;
+  bool _isLoading = false;
+  bool _obscurePassword = true;
+  String? _errorMessage;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _login() async {
+    if (!_formKey.currentState!.validate() || _isLoading) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await _supabase.auth.signInWithPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+    } on AuthException catch (e) {
+      setState(() {
+        _errorMessage = e.message;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Khong the dang nhap. Vui long thu lai.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Card(
+                color: const Color(0xFF1E293B),
+                elevation: 8,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: const BorderSide(color: Color(0xFF334155)),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Icon(
+                          Icons.grid_on_rounded,
+                          size: 44,
+                          color: Color(0xFF06B6D4),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Dang nhap',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 26,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Su dung email va mat khau Supabase de vao game.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Color(0xFF94A3B8)),
+                        ),
+                        const SizedBox(height: 24),
+                        TextFormField(
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: 'Email',
+                            prefixIcon: Icon(Icons.email_outlined),
+                            border: OutlineInputBorder(),
+                          ),
+                          validator: (value) {
+                            final email = value?.trim() ?? '';
+                            if (email.isEmpty) {
+                              return 'Vui long nhap email';
+                            }
+                            if (!email.contains('@')) {
+                              return 'Email khong hop le';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _passwordController,
+                          obscureText: _obscurePassword,
+                          textInputAction: TextInputAction.done,
+                          onFieldSubmitted: (_) => _login(),
+                          decoration: InputDecoration(
+                            labelText: 'Mat khau',
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(
+                              tooltip: _obscurePassword
+                                  ? 'Hien mat khau'
+                                  : 'An mat khau',
+                              onPressed: () {
+                                setState(() {
+                                  _obscurePassword = !_obscurePassword;
+                                });
+                              },
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
+                              ),
+                            ),
+                            border: const OutlineInputBorder(),
+                          ),
+                          validator: (value) {
+                            if ((value ?? '').isEmpty) {
+                              return 'Vui long nhap mat khau';
+                            }
+                            return null;
+                          },
+                        ),
+                        if (_errorMessage != null) ...[
+                          const SizedBox(height: 16),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0x33EF4444),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFFEF4444)),
+                            ),
+                            child: Text(
+                              _errorMessage!,
+                              style: const TextStyle(color: Color(0xFFFCA5A5)),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 24),
+                        FilledButton.icon(
+                          onPressed: _isLoading ? null : _login,
+                          icon: _isLoading
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.login),
+                          label: Text(
+                            _isLoading ? 'Dang dang nhap...' : 'Dang nhap',
+                          ),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF06B6D4),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class Move {
   final int row;
   final int col;
@@ -74,20 +321,22 @@ class _CaroGamePageState extends State<CaroGamePage> {
     {'label': '20x20 (Cần 5)', 'size': 20, 'win': 5},
   ];
 
-  // --- Các biến phục vụ chế độ kết nối Online qua WebSocket ---
+  // --- Các biến phục vụ chế độ kết nối Online qua Supabase ---
   bool isOnlineMode = false; // Có đang chơi Online không
   bool isConnected = false; // Đã kết nối thành công tới phòng chưa
   bool isConnecting = false; // Đang trong quá trình kết nối tới máy chủ
   String? connectionError; // Thông báo lỗi kết nối nếu có
-  WebSocketChannel? _channel; // Kênh kết nối WebSocket
-  String? currentRoomId; // Mã phòng chơi hiện tại (4 chữ số)
+  String? currentRoomId; // ID thực tế của phòng trong DB (UUID)
+  String? currentRoomCode; // Mã phòng chơi hiện tại (4 chữ số) hiển thị cho user
   String? mySymbol; // Ký tự quân cờ của thiết bị này ('X' hoặc 'O')
   bool isOpponentJoined = false; // Đối thủ đã tham gia phòng chưa
 
+  final SupabaseClient supabase = Supabase.instance.client;
+  StreamSubscription<List<Map<String, dynamic>>>? _roomSubscription;
+  RealtimeChannel? _presenceChannel;
+  late String myPlayerId; // Client ID duy nhất để phân biệt người chơi
+
   // Controllers cho các ô nhập liệu
-  final TextEditingController _ipController = TextEditingController(
-    text: 'localhost:8080',
-  );
   final TextEditingController _roomIdController = TextEditingController();
 
   // --- Các biến phục vụ Đồng hồ đếm ngược & Gợi ý nước đi ---
@@ -100,16 +349,16 @@ class _CaroGamePageState extends State<CaroGamePage> {
   @override
   void initState() {
     super.initState();
+    myPlayerId = '${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(1000)}';
     _initGameData();
     _startTimer(); // Khởi chạy timer ban đầu cho X đi trước
   }
 
   @override
   void dispose() {
-    _ipController.dispose();
     _roomIdController.dispose();
     _cancelTimer();
-    _closeWebSocket();
+    unawaited(_disconnect(updateState: false));
     super.dispose();
   }
 
@@ -130,6 +379,17 @@ class _CaroGamePageState extends State<CaroGamePage> {
   void _startTimer() {
     _cancelTimer();
     if (selectedTimerDuration == 0 || gameOver) return;
+
+    // Chỉ đếm ngược khi ván đấu thực sự bắt đầu:
+    // - Local: Đã có ít nhất một nước đi trên bàn cờ (history không trống).
+    // - Online: Khi đối thủ đã tham gia phòng chơi.
+    final bool hasStarted = isOnlineMode ? isOpponentJoined : history.isNotEmpty;
+    if (!hasStarted) {
+      setState(() {
+        remainingTime = selectedTimerDuration;
+      });
+      return;
+    }
 
     setState(() {
       remainingTime = selectedTimerDuration;
@@ -171,11 +431,15 @@ class _CaroGamePageState extends State<CaroGamePage> {
         final bool isMyTurn =
             (isXTurn && mySymbol == 'X') || (!isXTurn && mySymbol == 'O');
         if (isMyTurn) {
-          // Gửi thông tin hết giờ tới đối thủ để đồng bộ
-          _sendSocketMessage({
-            'action': 'msg',
-            'payload': {'type': 'timeout'},
-          });
+          // Cập nhật database báo hết giờ
+          supabase.from('rooms').update({
+            'game_over': true,
+            'status': 'ended',
+            'x_wins': winningSymbol == 'X' ? xWins + 1 : xWins,
+            'o_wins': winningSymbol == 'O' ? oWins + 1 : oWins,
+            'last_action': 'timeout',
+          }).eq('id', currentRoomId!);
+          
           _showEndGameDialog(
             'Hết Giờ! ⏰',
             'Bạn đã hết thời gian suy nghĩ ván cờ và bị xử thua ván này!',
@@ -192,10 +456,10 @@ class _CaroGamePageState extends State<CaroGamePage> {
     });
   }
 
-  // --- HÀM ĐỒNG BỘ VÀ XỬ LÝ SOCKET ---
+  // --- HÀM ĐỒNG BỘ VÀ XỬ LÝ SUPABASE ---
 
-  /// Kết nối đến WebSocket Server
-  void _connectWebSocket(bool isCreate, {String? joinRoomId}) {
+  /// Tạo hoặc Tham gia phòng chơi trên Supabase
+  void _connectSupabase(bool isCreate, {String? joinRoomCode}) async {
     if (isConnecting) return;
 
     setState(() {
@@ -203,117 +467,291 @@ class _CaroGamePageState extends State<CaroGamePage> {
       connectionError = null;
     });
 
-    final String host = _ipController.text.trim();
-    final String url = 'ws://$host';
-
     try {
-      _channel = WebSocketChannel.connect(Uri.parse(url));
-
-      // Lắng nghe dữ liệu realtime từ máy chủ
-      _channel!.stream.listen(
-        (message) {
-          final data = jsonDecode(message);
-          final String status = data['status'] ?? '';
-
-          if (status == 'created') {
-            // Nhận phản hồi tạo phòng thành công
-            setState(() {
-              isConnected = true;
-              isConnecting = false;
-              currentRoomId = data['roomId'];
-              mySymbol = 'X'; // Người tạo phòng luôn cầm quân X và đi trước
-              isOpponentJoined = false;
-            });
-            _cancelTimer(); // Chờ đối thủ vào mới chạy timer
-          } else if (status == 'joined') {
-            // Nhận phản hồi tham gia phòng thành công
-            setState(() {
-              isConnected = true;
-              isConnecting = false;
-              currentRoomId = data['roomId'];
-              mySymbol = 'O'; // Người tham gia cầm quân O
-              isOpponentJoined = true;
-            });
-            _startTimer(); // Bắt đầu tính giờ cho X
-          } else if (status == 'start') {
-            // Đối thủ tham gia -> Bắt đầu chơi
-            setState(() {
-              isOpponentJoined = true;
-              _initGameData(); // Khởi tạo lại bàn cờ mới đồng bộ
-            });
-            _startTimer(); // Khởi chạy đồng hồ đếm ngược
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Đối thủ đã tham gia phòng. Trận đấu bắt đầu!')),
-              );
-            }
-          } else if (status == 'message') {
-            // Nhận các tin nhắn điều phối hành động từ đối thủ
-            _handleServerMessage(data['payload']);
-          } else if (status == 'opponent_disconnected') {
-            // Đối thủ ngắt kết nối
-            _cancelTimer();
-            setState(() {
-              isOpponentJoined = false;
-            });
-            _showOpponentDisconnectedDialog();
-          } else if (status == 'error') {
-            _disconnect(error: data['message']);
-          }
-        },
-        onError: (error) {
-          _disconnect(error: 'Không thể kết nối tới máy chủ! Vui lòng kiểm tra lại địa chỉ IP.');
-        },
-        onDone: () {
-          if (isConnected) {
-            _disconnect(error: 'Kết nối phòng chơi đã bị đóng!');
-          }
-        },
-      );
-
-      // Gửi yêu cầu khởi tạo sau khi mở kết nối socket
-      Future.delayed(const Duration(milliseconds: 300), () {
-        if (_channel != null) {
-          if (isCreate) {
-            _sendSocketMessage({'action': 'create'});
-          } else if (joinRoomId != null) {
-            _sendSocketMessage({'action': 'join', 'roomId': joinRoomId});
+      if (isCreate) {
+        // --- TẠO PHÒNG MỚI ---
+        String code = '';
+        bool isUnique = false;
+        int attempts = 0;
+        
+        while (!isUnique && attempts < 10) {
+          attempts++;
+          code = (1000 + Random().nextInt(9000)).toString(); // 1000 to 9999
+          final existing = await supabase
+              .from('rooms')
+              .select('id')
+              .eq('room_code', code)
+              .inFilter('status', ['waiting', 'playing'])
+              .maybeSingle();
+              
+          if (existing == null) {
+            isUnique = true;
           }
         }
-      });
 
+        if (!isUnique) {
+          throw Exception('Không thể tạo mã phòng độc nhất. Vui lòng thử lại!');
+        }
+
+        final roomData = await supabase.from('rooms').insert({
+          'room_code': code,
+          'player_x': myPlayerId,
+          'status': 'waiting',
+          'board_size': boardSize,
+          'win_condition': winCondition,
+          'timer_duration': selectedTimerDuration,
+          'is_x_turn': true,
+          'game_over': false,
+          'history': [],
+          'winning_cells': [],
+          'x_wins': xWins,
+          'o_wins': oWins,
+          'draws': draws,
+        }).select().single();
+
+        final String roomId = roomData['id'];
+
+        setState(() {
+          isConnected = true;
+          isConnecting = false;
+          currentRoomId = roomId;
+          currentRoomCode = code;
+          mySymbol = 'X';
+          isOpponentJoined = false;
+        });
+
+        _subscribeToRoom(roomId);
+        _setupPresence(roomId);
+      } else {
+        // --- THAM GIA PHÒNG ---
+        if (joinRoomCode == null || joinRoomCode.length != 4) {
+          throw Exception('Mã phòng phải có đúng 4 chữ số!');
+        }
+
+        final roomData = await supabase
+            .from('rooms')
+            .select()
+            .eq('room_code', joinRoomCode)
+            .eq('status', 'waiting')
+            .maybeSingle();
+
+        if (roomData == null) {
+          throw Exception('Phòng không tồn tại hoặc đã đầy/bắt đầu!');
+        }
+
+        final String roomId = roomData['id'];
+
+        final updatedRoom = await supabase
+            .from('rooms')
+            .update({
+              'player_o': myPlayerId,
+              'status': 'playing',
+              'last_action': 'join',
+            })
+            .eq('id', roomId)
+            .select()
+            .single();
+
+        setState(() {
+          isConnected = true;
+          isConnecting = false;
+          currentRoomId = roomId;
+          currentRoomCode = joinRoomCode;
+          mySymbol = 'O';
+          isOpponentJoined = true;
+          
+          boardSize = updatedRoom['board_size'];
+          winCondition = updatedRoom['win_condition'];
+          selectedTimerDuration = updatedRoom['timer_duration'];
+          _initGameData();
+        });
+
+        _subscribeToRoom(roomId);
+        _setupPresence(roomId);
+        _startTimer();
+      }
     } catch (e) {
-      _disconnect(error: 'Lỗi định dạng địa chỉ máy chủ!');
+      setState(() {
+        isConnecting = false;
+        connectionError = e is PostgrestException ? e.message : e.toString().replaceAll('Exception: ', '');
+      });
     }
   }
 
-  /// Gửi dữ liệu qua WebSocket
-  void _sendSocketMessage(Map<String, dynamic> data) {
-    if (_channel != null) {
+  void _subscribeToRoom(String roomId) {
+    _roomSubscription?.cancel();
+    _roomSubscription = supabase
+        .from('rooms')
+        .stream(primaryKey: ['id'])
+        .eq('id', roomId)
+        .listen((List<Map<String, dynamic>> data) {
+          if (data.isNotEmpty && mounted) {
+            _handleRoomUpdate(data.first);
+          }
+        });
+  }
+
+  void _handleRoomUpdate(Map<String, dynamic> room) {
+    final String lastAction = room['last_action'] ?? '';
+    
+    if (mySymbol == 'X' && room['player_o'] != null && !isOpponentJoined) {
+      setState(() {
+        isOpponentJoined = true;
+      });
+      _startTimer();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đối thủ đã tham gia phòng. Trận đấu bắt đầu!')),
+      );
+    }
+
+    final List<dynamic> historyData = room['history'] ?? [];
+    final bool dbIsXTurn = room['is_x_turn'] ?? true;
+    final bool dbGameOver = room['game_over'] ?? false;
+    final List<dynamic> winningCellsData = room['winning_cells'] ?? [];
+    final Map<String, dynamic>? lastMoveData = room['last_move'];
+    
+    final int dbXWins = room['x_wins'] ?? 0;
+    final int dbOWins = room['o_wins'] ?? 0;
+    final int dbDraws = room['draws'] ?? 0;
+    
+    final int dbBoardSize = room['board_size'] ?? boardSize;
+    final int dbWinCondition = room['win_condition'] ?? winCondition;
+    final int dbTimerDuration = room['timer_duration'] ?? selectedTimerDuration;
+
+    final bool previousGameOver = gameOver;
+
+    setState(() {
+      if (boardSize != dbBoardSize || winCondition != dbWinCondition) {
+        boardSize = dbBoardSize;
+        winCondition = dbWinCondition;
+      }
+      
+      selectedTimerDuration = dbTimerDuration;
+      xWins = dbXWins;
+      oWins = dbOWins;
+      draws = dbDraws;
+      
+      board = List.generate(boardSize, (_) => List.filled(boardSize, ''));
+      history = [];
+      for (final move in historyData) {
+        final int r = move['row'];
+        final int c = move['col'];
+        final String sym = move['symbol'];
+        board[r][c] = sym;
+        history.add(Move(row: r, col: c, symbol: sym));
+      }
+      
+      isXTurn = dbIsXTurn;
+      gameOver = dbGameOver;
+      
+      if (lastMoveData != null) {
+        lastMove = [lastMoveData['row'], lastMoveData['col']];
+      } else {
+        lastMove = null;
+      }
+      
+      winningCells = [];
+      for (final cell in winningCellsData) {
+        winningCells.add([cell[0], cell[1]]);
+      }
+    });
+    
+    if (!previousGameOver && gameOver) {
+      String title = '';
+      String message = '';
+      String winnerSymbol = '';
+      
+      if (lastAction == 'timeout') {
+        final String losingSymbol = isXTurn ? 'X' : 'O';
+        winnerSymbol = losingSymbol == 'X' ? 'O' : 'X';
+        title = 'Chiến Thắng! ⏰';
+        message = 'Đối thủ đã hết thời gian suy nghĩ. Bạn giành chiến thắng!';
+      } else if (winningCells.isNotEmpty && lastMove != null) {
+        winnerSymbol = board[lastMove![0]][lastMove![1]];
+        if (winnerSymbol == mySymbol) {
+          title = 'Chiến Thắng! 🎉';
+          message = 'Chúc mừng bạn đã giành chiến thắng ván cờ này!';
+        } else {
+          title = 'Thất Bại! 😢';
+          message = 'Đối thủ ($winnerSymbol) đã giành chiến thắng ván này!';
+        }
+      } else {
+        title = 'Hòa Cờ! 🤝';
+        message = 'Tất cả các ô trên bàn cờ đã đầy!';
+      }
+      
+      _showEndGameDialog(title, message, winnerSymbol);
+    }
+
+    if (!gameOver && isOpponentJoined) {
+      _startTimer();
+    } else {
+      _cancelTimer();
+    }
+  }
+
+  void _setupPresence(String roomId) {
+    _presenceChannel = supabase.channel('presence_$roomId');
+    
+    _presenceChannel!.onPresenceSync((payload) {
+      if (!mounted) return;
+      final state = _presenceChannel!.presenceState();
+      
+      final List<String> presentPlayers = [];
+      for (final presenceState in state) {
+        for (final presence in presenceState.presences) {
+          final String? id = presence.payload['player_id'];
+          if (id != null) {
+            presentPlayers.add(id);
+          }
+        }
+      }
+      
+      final bool opponentStillHere = presentPlayers.any((id) => id != myPlayerId);
+      
+      if (isOpponentJoined && !opponentStillHere) {
+        _cancelTimer();
+        setState(() {
+          isOpponentJoined = false;
+        });
+        _showOpponentDisconnectedDialog();
+      }
+    }).subscribe((status, error) async {
+      if (status == RealtimeSubscribeStatus.subscribed && mounted) {
+        await _presenceChannel!.track({
+          'player_id': myPlayerId,
+        });
+      }
+    });
+  }
+
+  Future<void> _disconnect({String? error, bool updateState = true}) async {
+    _cancelTimer();
+    _roomSubscription?.cancel();
+    _roomSubscription = null;
+    
+    if (_presenceChannel != null) {
+      await _presenceChannel!.unsubscribe();
+      _presenceChannel = null;
+    }
+    
+    if (currentRoomId != null) {
       try {
-        _channel!.sink.add(jsonEncode(data));
+        await supabase.from('rooms').update({
+          'status': 'ended',
+        }).eq('id', currentRoomId!);
       } catch (e) {
-        print('Không thể gửi tin nhắn: $e');
+        // Ignored
       }
     }
-  }
 
-  /// Đóng kết nối Socket và dọn dẹp
-  void _closeWebSocket() {
-    if (_channel != null) {
-      _channel!.sink.close();
-      _channel = null;
-    }
-  }
+    if (!updateState || !mounted) return;
 
-  /// Thoát kết nối và cập nhật UI
-  void _disconnect({String? error}) {
-    _closeWebSocket();
-    _cancelTimer();
     setState(() {
       isConnected = false;
       isConnecting = false;
       currentRoomId = null;
+      currentRoomCode = null;
       mySymbol = null;
       isOpponentJoined = false;
       if (error != null) {
@@ -322,92 +760,9 @@ class _CaroGamePageState extends State<CaroGamePage> {
     });
   }
 
-  /// Xử lý các tin nhắn điều phối hành động của đối thủ
-  void _handleServerMessage(dynamic payload) {
-    final String type = payload['type'] ?? '';
-
-    if (type == 'move') {
-      final int r = payload['row'];
-      final int c = payload['col'];
-      setState(() {
-        final String opponentSymbol = mySymbol == 'X' ? 'O' : 'X';
-        board[r][c] = opponentSymbol;
-        lastMove = [r, c];
-        history.add(Move(row: r, col: c, symbol: opponentSymbol));
-        suggestedCell = null; // Xóa gợi ý khi có nước đi mới
-
-        // Kiểm tra xem đối thủ thắng hay chưa
-        final winningCombo = checkWinner(r, c, opponentSymbol);
-        if (winningCombo != null) {
-          _cancelTimer();
-          winningCells = winningCombo;
-          gameOver = true;
-          if (opponentSymbol == 'X') {
-            xWins++;
-          } else {
-            oWins++;
-          }
-          Future.delayed(const Duration(milliseconds: 400), () {
-            if (mounted) {
-              _showEndGameDialog(
-                'Thất Bại! 😢',
-                'Đối thủ ($opponentSymbol) đã giành chiến thắng ván này!',
-                opponentSymbol,
-              );
-            }
-          });
-        } else if (checkDraw()) {
-          _cancelTimer();
-          gameOver = true;
-          draws++;
-          Future.delayed(const Duration(milliseconds: 400), () {
-            if (mounted) {
-              _showEndGameDialog(
-                'Hòa Cờ! 🤝',
-                'Trận đấu kết thúc với kết quả hòa!',
-                '',
-              );
-            }
-          });
-        } else {
-          isXTurn = !isXTurn; // Chuyển lượt về cho mình
-          _startTimer();      // Bắt đầu tính giờ cho mình
-        }
-      });
-    } else if (type == 'undo') {
-      _executeLocalUndo();
-      _startTimer();
-    } else if (type == 'reset') {
-      _executeLocalResetBoard();
-      _startTimer();
-    } else if (type == 'reset_all') {
-      _executeLocalResetAll();
-      _startTimer();
-    } else if (type == 'change_size') {
-      final int size = payload['size'];
-      final int win = payload['win'];
-      _executeLocalChangeSize(size, win);
-      _startTimer();
-    } else if (type == 'change_timer') {
-      final int duration = payload['duration'];
-      _executeLocalTimerChange(duration);
-    } else if (type == 'timeout') {
-      _cancelTimer();
-      setState(() {
-        gameOver = true;
-        final String winningSymbol = mySymbol!;
-        if (winningSymbol == 'X') {
-          xWins++;
-        } else {
-          oWins++;
-        }
-        _showEndGameDialog(
-          'Chiến Thắng! ⏰',
-          'Đối thủ đã hết thời gian suy nghĩ. Bạn giành chiến thắng!',
-          winningSymbol,
-        );
-      });
-    }
+  Future<void> _logout() async {
+    await _disconnect(updateState: false);
+    await Supabase.instance.client.auth.signOut();
   }
 
   void _executeLocalUndo() {
@@ -459,15 +814,28 @@ class _CaroGamePageState extends State<CaroGamePage> {
   // --- HÀM TƯƠNG TÁC TỪ WIDGETS ---
 
   /// Rút nước đi
-  void undo() {
+  void undo() async {
     if (isOnlineMode) {
       if (history.isEmpty || gameOver || !isOpponentJoined) return;
-      _executeLocalUndo();
-      _startTimer();
-      _sendSocketMessage({
-        'action': 'msg',
-        'payload': {'type': 'undo'},
-      });
+      
+      final List<dynamic> newHistory = history.map((m) => {
+        'row': m.row,
+        'col': m.col,
+        'symbol': m.symbol,
+      }).toList()..removeLast();
+
+      Map<String, dynamic>? newLastMove;
+      if (newHistory.isNotEmpty) {
+        final last = newHistory.last;
+        newLastMove = {'row': last['row'], 'col': last['col']};
+      }
+
+      await supabase.from('rooms').update({
+        'history': newHistory,
+        'is_x_turn': !isXTurn,
+        'last_move': newLastMove,
+        'last_action': 'undo',
+      }).eq('id', currentRoomId!);
     } else {
       _executeLocalUndo();
       _startTimer();
@@ -475,15 +843,17 @@ class _CaroGamePageState extends State<CaroGamePage> {
   }
 
   /// Chơi ván mới
-  void resetBoard() {
+  void resetBoard() async {
     if (isOnlineMode) {
       if (!isOpponentJoined) return;
-      _executeLocalResetBoard();
-      _startTimer();
-      _sendSocketMessage({
-        'action': 'msg',
-        'payload': {'type': 'reset'},
-      });
+      await supabase.from('rooms').update({
+        'history': [],
+        'is_x_turn': true,
+        'game_over': false,
+        'winning_cells': [],
+        'last_move': null,
+        'last_action': 'reset',
+      }).eq('id', currentRoomId!);
     } else {
       _executeLocalResetBoard();
       _startTimer();
@@ -491,15 +861,20 @@ class _CaroGamePageState extends State<CaroGamePage> {
   }
 
   /// Reset tỉ số
-  void resetAll() {
+  void resetAll() async {
     if (isOnlineMode) {
       if (!isOpponentJoined) return;
-      _executeLocalResetAll();
-      _startTimer();
-      _sendSocketMessage({
-        'action': 'msg',
-        'payload': {'type': 'reset_all'},
-      });
+      await supabase.from('rooms').update({
+        'history': [],
+        'is_x_turn': true,
+        'game_over': false,
+        'winning_cells': [],
+        'last_move': null,
+        'x_wins': 0,
+        'o_wins': 0,
+        'draws': 0,
+        'last_action': 'reset_all',
+      }).eq('id', currentRoomId!);
     } else {
       _executeLocalResetAll();
       _startTimer();
@@ -507,15 +882,19 @@ class _CaroGamePageState extends State<CaroGamePage> {
   }
 
   /// Thay đổi kích cỡ
-  void handleChangeSize(int size, int win) {
+  void handleChangeSize(int size, int win) async {
     if (isOnlineMode) {
       if (!isOpponentJoined) return;
-      _executeLocalChangeSize(size, win);
-      _startTimer();
-      _sendSocketMessage({
-        'action': 'msg',
-        'payload': {'type': 'change_size', 'size': size, 'win': win},
-      });
+      await supabase.from('rooms').update({
+        'board_size': size,
+        'win_condition': win,
+        'history': [],
+        'is_x_turn': true,
+        'game_over': false,
+        'winning_cells': [],
+        'last_move': null,
+        'last_action': 'change_size',
+      }).eq('id', currentRoomId!);
     } else {
       _executeLocalChangeSize(size, win);
       _startTimer();
@@ -523,14 +902,13 @@ class _CaroGamePageState extends State<CaroGamePage> {
   }
 
   /// Đổi cấu hình đồng hồ
-  void handleTimerChange(int duration) {
+  void handleTimerChange(int duration) async {
     if (isOnlineMode) {
       if (!isOpponentJoined) return;
-      _executeLocalTimerChange(duration);
-      _sendSocketMessage({
-        'action': 'msg',
-        'payload': {'type': 'change_timer', 'duration': duration},
-      });
+      await supabase.from('rooms').update({
+        'timer_duration': duration,
+        'last_action': 'change_timer',
+      }).eq('id', currentRoomId!);
     } else {
       _executeLocalTimerChange(duration);
     }
@@ -809,11 +1187,14 @@ class _CaroGamePageState extends State<CaroGamePage> {
   Widget build(BuildContext context) {
     final double screenWidth = MediaQuery.of(context).size.width;
     final bool isLargeScreen = screenWidth > 950;
+    final String? userEmail = Supabase.instance.client.auth.currentUser?.email;
 
     return Scaffold(
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 52, 16, 16),
           child: Column(
             children: [
               _buildHeader(),
@@ -910,6 +1291,64 @@ class _CaroGamePageState extends State<CaroGamePage> {
           ),
         ),
       ),
+      if (userEmail != null)
+        Positioned(
+          top: 12,
+          right: 12,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 280),
+            child: Material(
+              color: const Color(0xFF1E293B),
+              elevation: 4,
+              borderRadius: BorderRadius.circular(24),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.account_circle_outlined,
+                      size: 18,
+                      color: Color(0xFF06B6D4),
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        userEmail,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Tooltip(
+                      message: 'Dang xuat',
+                      child: IconButton(
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                        padding: EdgeInsets.zero,
+                        onPressed: _logout,
+                        icon: const Icon(
+                          Icons.logout,
+                          size: 18,
+                          color: Color(0xFFFCA5A5),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        ],
+      ),
     );
   }
 
@@ -975,7 +1414,7 @@ class _CaroGamePageState extends State<CaroGamePage> {
 
     final bool isTimerActive =
         selectedTimerDuration > 0 &&
-        (!isOnlineMode || isOpponentJoined) &&
+        (!isOnlineMode ? history.isNotEmpty : isOpponentJoined) &&
         !gameOver;
     final double progress = isTimerActive
         ? remainingTime / selectedTimerDuration
@@ -1279,63 +1718,63 @@ class _CaroGamePageState extends State<CaroGamePage> {
   }
 
   /// Xử lý chạm vào ô cờ
-  void _handleCellTap(int row, int col) {
+  void _handleCellTap(int row, int col) async {
     if (gameOver || board[row][col].isNotEmpty) return;
 
     if (isOnlineMode) {
       if (!isConnected || !isOpponentJoined) return;
       
-      // Chỉ cho phép đánh nếu đến lượt mình
       final bool isMyTurn = (isXTurn && mySymbol == 'X') || (!isXTurn && mySymbol == 'O');
       if (!isMyTurn) return;
 
-      setState(() {
-        board[row][col] = mySymbol!;
-        lastMove = [row, col];
-        history.add(Move(row: row, col: col, symbol: mySymbol!));
-        suggestedCell = null;
+      final Map<String, dynamic> newMove = {
+        'row': row,
+        'col': col,
+        'symbol': mySymbol!,
+      };
+      
+      final List<dynamic> newHistory = history.map((m) => <String, dynamic>{
+        'row': m.row,
+        'col': m.col,
+        'symbol': m.symbol,
+      }).toList()..add(newMove);
 
-        // Gửi nước đi sang cho đối thủ
-        _sendSocketMessage({
-          'action': 'msg',
-          'payload': {
-            'type': 'move',
-            'row': row,
-            'col': col,
-          }
-        });
+      board[row][col] = mySymbol!;
+      final winningCombo = checkWinner(row, col, mySymbol!);
+      final isDraw = checkDraw();
+      board[row][col] = '';
+      
+      bool dbGameOver = false;
+      List<List<int>> dbWinningCells = [];
+      int dbXWins = xWins;
+      int dbOWins = oWins;
+      int dbDraws = draws;
 
-        final winningCombo = checkWinner(row, col, mySymbol!);
-        if (winningCombo != null) {
-          _cancelTimer();
-          winningCells = winningCombo;
-          gameOver = true;
-          if (mySymbol == 'X') {
-            xWins++;
-          } else {
-            oWins++;
-          }
-          _showEndGameDialog(
-            'Chiến Thắng! 🎉',
-            'Chúc mừng bạn đã giành chiến thắng ván cờ này!',
-            mySymbol!,
-          );
-        } else if (checkDraw()) {
-          _cancelTimer();
-          gameOver = true;
-          draws++;
-          _showEndGameDialog(
-            'Hòa Cờ! 🤝',
-            'Tất cả các ô trên bàn cờ đã đầy!',
-            '',
-          );
+      if (winningCombo != null) {
+        dbGameOver = true;
+        dbWinningCells = winningCombo;
+        if (mySymbol == 'X') {
+          dbXWins++;
         } else {
-          isXTurn = !isXTurn;
-          _startTimer();
+          dbOWins++;
         }
-      });
+      } else if (isDraw) {
+        dbGameOver = true;
+        dbDraws++;
+      }
+
+      await supabase.from('rooms').update({
+        'history': newHistory,
+        'is_x_turn': !isXTurn,
+        'last_move': {'row': row, 'col': col},
+        'game_over': dbGameOver,
+        'winning_cells': dbWinningCells,
+        'x_wins': dbXWins,
+        'o_wins': dbOWins,
+        'draws': dbDraws,
+        'last_action': 'move',
+      }).eq('id', currentRoomId!);
     } else {
-      // Chơi Offline (Local)
       final String currentSymbol = isXTurn ? 'X' : 'O';
       setState(() {
         board[row][col] = currentSymbol;
@@ -1506,7 +1945,7 @@ class _CaroGamePageState extends State<CaroGamePage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text(
-                'CHƠI ONLINE HÀNG XÓM',
+                'CHƠI ONLINE REALTIME',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 20,
@@ -1516,27 +1955,11 @@ class _CaroGamePageState extends State<CaroGamePage> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Tạo phòng và chia sẻ mã phòng để chơi cùng thiết bị khác trong cùng mạng nội bộ.',
+                'Tạo phòng mới hoặc tham gia phòng chơi bằng mã 4 chữ số đồng bộ qua Supabase.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
               ),
               const SizedBox(height: 24),
-              const Text(
-                'Địa chỉ máy chủ (IP:Port):',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
-              ),
-              const SizedBox(height: 6),
-              TextField(
-                controller: _ipController,
-                decoration: InputDecoration(
-                  hintText: 'Ví dụ: 192.168.1.15:8080',
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  filled: true,
-                  fillColor: const Color(0xFF0F172A),
-                ),
-              ),
-              const SizedBox(height: 16),
               if (connectionError != null) ...[
                 Text(
                   connectionError!,
@@ -1546,7 +1969,7 @@ class _CaroGamePageState extends State<CaroGamePage> {
                 const SizedBox(height: 16),
               ],
               ElevatedButton(
-                onPressed: isConnecting ? null : () => _connectWebSocket(true),
+                onPressed: isConnecting ? null : () => _connectSupabase(true),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF06B6D4),
                   foregroundColor: Colors.white,
@@ -1598,7 +2021,7 @@ class _CaroGamePageState extends State<CaroGamePage> {
                     : () {
                         final room = _roomIdController.text.trim();
                         if (room.length == 4) {
-                          _connectWebSocket(false, joinRoomId: room);
+                          _connectSupabase(false, joinRoomCode: room);
                         } else {
                           setState(() {
                             connectionError = 'Mã phòng phải có đúng 4 chữ số!';
@@ -1787,7 +2210,7 @@ class _CaroGamePageState extends State<CaroGamePage> {
           if (isOnlineMode && isConnected) ...[
             const SizedBox(height: 8),
             Text(
-              'Mã phòng: $currentRoomId',
+              'Mã phòng: $currentRoomCode',
               textAlign: TextAlign.center,
               style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.amber, fontSize: 15),
             ),
@@ -1896,7 +2319,7 @@ class _CaroGamePageState extends State<CaroGamePage> {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 Text(
-                  'Phòng: $currentRoomId',
+                  'Phòng: $currentRoomCode',
                   style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.amber, fontSize: 13),
                 ),
                 Text(
