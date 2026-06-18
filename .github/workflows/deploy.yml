@@ -3,7 +3,7 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches:
-      - Sweet # Tự động kích hoạt khi push lên nhánh Sweet của bạn
+      - main # Chạy trên nhánh mặc định main để thỏa mãn quy tắc bảo vệ môi trường của GitHub Pages
 
 # Thiết lập quyền hạn cho GITHUB_TOKEN để deploy lên Pages
 permissions:
