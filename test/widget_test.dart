@@ -16,9 +16,9 @@ void main() {
 
     await tester.pumpWidget(const MyApp());
 
-    expect(find.text('Dang nhap'), findsAtLeastNWidgets(1));
+    expect(find.text('Đăng nhập'), findsAtLeastNWidgets(1));
     expect(find.text('Email'), findsOneWidget);
-    expect(find.text('Mat khau'), findsOneWidget);
+    expect(find.text('Mật khẩu'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     tester.view.resetPhysicalSize();

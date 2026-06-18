@@ -90,16 +90,23 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _confirmPasswordController = TextEditingController();
+  final FocusNode _confirmPasswordFocusNode = FocusNode();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final SupabaseClient _supabase = Supabase.instance.client;
+
+  bool _isSignUp = false;
   bool _isLoading = false;
   bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
   String? _errorMessage;
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    _confirmPasswordFocusNode.dispose();
     super.dispose();
   }
 
@@ -122,7 +129,101 @@ class _LoginPageState extends State<LoginPage> {
       });
     } catch (e) {
       setState(() {
-        _errorMessage = 'Khong the dang nhap. Vui long thu lai.';
+        _errorMessage = 'Không thể đăng nhập. Vui lòng thử lại.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _signUp() async {
+    if (!_formKey.currentState!.validate() || _isLoading) return;
+
+    if (_passwordController.text != _confirmPasswordController.text) {
+      setState(() {
+        _errorMessage = 'Mật khẩu xác nhận không khớp!';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final response = await _supabase.auth.signUp(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+
+      if (response.user != null) {
+        // Luôn đăng xuất để bắt người dùng tự đăng nhập lại
+        await _supabase.auth.signOut();
+
+        if (response.session == null) {
+          // Email confirmation is required by Supabase
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => AlertDialog(
+              title: const Text('Đăng ký thành công'),
+              content: const Text(
+                'Một email xác nhận đã được gửi đến địa chỉ của bạn. Vui lòng kiểm tra và xác thực tài khoản trước khi đăng nhập.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    setState(() {
+                      _isSignUp = false;
+                      _passwordController.clear();
+                      _confirmPasswordController.clear();
+                    });
+                  },
+                  child: const Text('Đồng ý'),
+                ),
+              ],
+            ),
+          );
+        } else {
+          // Session was active, but we logged out
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => AlertDialog(
+              title: const Text('Đăng ký thành công'),
+              content: const Text(
+                'Đăng ký tài khoản thành công! Vui lòng đăng nhập lại bằng tài khoản mới của bạn.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    setState(() {
+                      _isSignUp = false;
+                      _passwordController.clear();
+                      _confirmPasswordController.clear();
+                    });
+                  },
+                  child: const Text('Đồng ý'),
+                ),
+              ],
+            ),
+          );
+        }
+      }
+    } on AuthException catch (e) {
+      setState(() {
+        _errorMessage = e.message;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Không thể đăng ký. Vui lòng thử lại sau.';
       });
     } finally {
       if (mounted) {
@@ -163,20 +264,22 @@ class _LoginPageState extends State<LoginPage> {
                           color: Color(0xFF06B6D4),
                         ),
                         const SizedBox(height: 16),
-                        const Text(
-                          'Dang nhap',
+                        Text(
+                          _isSignUp ? 'Đăng ký tài khoản' : 'Đăng nhập',
                           textAlign: TextAlign.center,
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 26,
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
                           ),
                         ),
                         const SizedBox(height: 6),
-                        const Text(
-                          'Su dung email va mat khau Supabase de vao game.',
+                        Text(
+                          _isSignUp
+                              ? 'Tạo tài khoản mới để chơi game Caro trực tuyến.'
+                              : 'Sử dụng email và mật khẩu của bạn để vào game.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: Color(0xFF94A3B8)),
+                          style: const TextStyle(color: Color(0xFF94A3B8)),
                         ),
                         const SizedBox(height: 24),
                         TextFormField(
@@ -191,10 +294,10 @@ class _LoginPageState extends State<LoginPage> {
                           validator: (value) {
                             final email = value?.trim() ?? '';
                             if (email.isEmpty) {
-                              return 'Vui long nhap email';
+                              return 'Vui lòng nhập email';
                             }
                             if (!email.contains('@')) {
-                              return 'Email khong hop le';
+                              return 'Email không hợp lệ';
                             }
                             return null;
                           },
@@ -203,15 +306,19 @@ class _LoginPageState extends State<LoginPage> {
                         TextFormField(
                           controller: _passwordController,
                           obscureText: _obscurePassword,
-                          textInputAction: TextInputAction.done,
-                          onFieldSubmitted: (_) => _login(),
+                          textInputAction: _isSignUp ? TextInputAction.next : TextInputAction.done,
+                          onFieldSubmitted: (_) {
+                            if (_isSignUp) {
+                              FocusScope.of(context).requestFocus(_confirmPasswordFocusNode);
+                            } else {
+                              _login();
+                            }
+                          },
                           decoration: InputDecoration(
-                            labelText: 'Mat khau',
+                            labelText: 'Mật khẩu',
                             prefixIcon: const Icon(Icons.lock_outline),
                             suffixIcon: IconButton(
-                              tooltip: _obscurePassword
-                                  ? 'Hien mat khau'
-                                  : 'An mat khau',
+                              tooltip: _obscurePassword ? 'Hiện mật khẩu' : 'Ẩn mật khẩu',
                               onPressed: () {
                                 setState(() {
                                   _obscurePassword = !_obscurePassword;
@@ -227,10 +334,55 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                           validator: (value) {
                             if ((value ?? '').isEmpty) {
-                              return 'Vui long nhap mat khau';
+                              return 'Vui lòng nhập mật khẩu';
                             }
                             return null;
                           },
+                        ),
+                        AnimatedCrossFade(
+                          duration: const Duration(milliseconds: 300),
+                          firstCurve: Curves.easeInOut,
+                          secondCurve: Curves.easeInOut,
+                          crossFadeState: _isSignUp ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+                          firstChild: const SizedBox.shrink(),
+                          secondChild: Padding(
+                            padding: const EdgeInsets.only(top: 16),
+                            child: TextFormField(
+                              controller: _confirmPasswordController,
+                              focusNode: _confirmPasswordFocusNode,
+                              obscureText: _obscureConfirmPassword,
+                              textInputAction: TextInputAction.done,
+                              onFieldSubmitted: (_) => _signUp(),
+                              decoration: InputDecoration(
+                                labelText: 'Nhập lại mật khẩu',
+                                prefixIcon: const Icon(Icons.lock_outline),
+                                suffixIcon: IconButton(
+                                  tooltip: _obscureConfirmPassword ? 'Hiện mật khẩu' : 'Ẩn mật khẩu',
+                                  onPressed: () {
+                                    setState(() {
+                                      _obscureConfirmPassword = !_obscureConfirmPassword;
+                                    });
+                                  },
+                                  icon: Icon(
+                                    _obscureConfirmPassword
+                                        ? Icons.visibility_outlined
+                                        : Icons.visibility_off_outlined,
+                                  ),
+                                ),
+                                border: const OutlineInputBorder(),
+                              ),
+                              validator: (value) {
+                                if (!_isSignUp) return null;
+                                if ((value ?? '').isEmpty) {
+                                  return 'Vui lòng xác nhận mật khẩu';
+                                }
+                                if (value != _passwordController.text) {
+                                  return 'Mật khẩu xác nhận không khớp!';
+                                }
+                                return null;
+                              },
+                            ),
+                          ),
                         ),
                         if (_errorMessage != null) ...[
                           const SizedBox(height: 16),
@@ -249,23 +401,46 @@ class _LoginPageState extends State<LoginPage> {
                         ],
                         const SizedBox(height: 24),
                         FilledButton.icon(
-                          onPressed: _isLoading ? null : _login,
+                          onPressed: _isLoading ? null : (_isSignUp ? _signUp : _login),
                           icon: _isLoading
                               ? const SizedBox(
                                   width: 18,
                                   height: 18,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
+                                    color: Colors.white,
                                   ),
                                 )
-                              : const Icon(Icons.login),
+                              : Icon(_isSignUp ? Icons.person_add : Icons.login),
                           label: Text(
-                            _isLoading ? 'Dang dang nhap...' : 'Dang nhap',
+                            _isLoading
+                                ? (_isSignUp ? 'Đang đăng ký...' : 'Đang đăng nhập...')
+                                : (_isSignUp ? 'Đăng ký' : 'Đăng nhập'),
                           ),
                           style: FilledButton.styleFrom(
                             backgroundColor: const Color(0xFF06B6D4),
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        TextButton(
+                          onPressed: _isLoading
+                              ? null
+                              : () {
+                                  setState(() {
+                                    _isSignUp = !_isSignUp;
+                                    _errorMessage = null;
+                                    _passwordController.clear();
+                                    _confirmPasswordController.clear();
+                                  });
+                                },
+                          child: Text(
+                            _isSignUp ? 'Đã có tài khoản? Đăng nhập ngay' : 'Chưa có tài khoản? Đăng ký ngay',
+                            style: const TextStyle(
+                              color: Color(0xFF06B6D4),
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ],
@@ -313,14 +488,6 @@ class _CaroGamePageState extends State<CaroGamePage> {
   int oWins = 0;
   int draws = 0;
 
-  // Tùy chọn kích thước bàn cờ
-  final List<Map<String, dynamic>> boardSizeOptions = [
-    {'label': '3x3 (Cần 3)', 'size': 3, 'win': 3},
-    {'label': '5x5 (Cần 5)', 'size': 5, 'win': 5},
-    {'label': '10x10 (Cần 5)', 'size': 10, 'win': 5},
-    {'label': '20x20 (Cần 5)', 'size': 20, 'win': 5},
-  ];
-
   // --- Các biến phục vụ chế độ kết nối Online qua Supabase ---
   bool isOnlineMode = false; // Có đang chơi Online không
   bool isConnected = false; // Đã kết nối thành công tới phòng chưa
@@ -345,6 +512,9 @@ class _CaroGamePageState extends State<CaroGamePage> {
   Timer? _turnTimer; // Đối tượng Timer đếm ngược
   List<int>?
   suggestedCell; // Tọa độ [row, col] được gợi ý bởi AI (nhấp nháy màu xanh)
+
+  // Trạng thái hiển thị pháo hoa khi chiến thắng
+  bool _showFireworks = false;
 
   @override
   void initState() {
@@ -680,7 +850,22 @@ class _CaroGamePageState extends State<CaroGamePage> {
         message = 'Tất cả các ô trên bàn cờ đã đầy!';
       }
       
-      _showEndGameDialog(title, message, winnerSymbol);
+      // Nếu có đường cờ thắng cuộc, kích hoạt pháo hoa 5s trước khi hiện Dialog hỏi ván mới
+      if (winningCells.isNotEmpty) {
+        setState(() {
+          _showFireworks = true;
+        });
+        Timer(const Duration(seconds: 5), () {
+          if (mounted) {
+            setState(() {
+              _showFireworks = false;
+            });
+            _showEndGameDialog(title, message, winnerSymbol);
+          }
+        });
+      } else {
+        _showEndGameDialog(title, message, winnerSymbol);
+      }
     }
 
     if (!gameOver && isOpponentJoined) {
@@ -761,8 +946,31 @@ class _CaroGamePageState extends State<CaroGamePage> {
   }
 
   Future<void> _logout() async {
-    await _disconnect(updateState: false);
-    await Supabase.instance.client.auth.signOut();
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Đăng xuất'),
+        content: const Text('Bạn có chắc chắn muốn đăng xuất không?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Hủy'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text(
+              'Đăng xuất',
+              style: TextStyle(color: Colors.redAccent),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await _disconnect(updateState: false);
+      await Supabase.instance.client.auth.signOut();
+    }
   }
 
   void _executeLocalUndo() {
@@ -1064,25 +1272,25 @@ class _CaroGamePageState extends State<CaroGamePage> {
       // Cấp trọng số điểm cho các cụm cờ
       if (count >= winCondition) {
         totalScore += 1000000; // Có thể thắng ngay lập tức
-      } else if (count == 4) {
+      } else if (count == winCondition - 1) {
         if (openEnds == 2) {
-          totalScore += 150000; // 4 quân hai đầu mở (cực kỳ nguy hiểm)
+          totalScore += 150000; // Gần thắng hai đầu mở (cực kỳ nguy hiểm)
         } else if (openEnds == 1) {
-          totalScore += 20000; // 4 quân bị chặn 1 đầu
+          totalScore += 20000; // Gần thắng bị chặn 1 đầu
         }
-      } else if (count == 3) {
+      } else if (count == winCondition - 2) {
         if (openEnds == 2) {
           totalScore += 10000; // 3 quân thoáng 2 đầu
         } else if (openEnds == 1) {
           totalScore += 2000; // 3 quân chặn 1 đầu
         }
-      } else if (count == 2) {
+      } else if (count == winCondition - 3) {
         if (openEnds == 2) {
           totalScore += 1000;
         } else if (openEnds == 1) {
           totalScore += 200;
         }
-      } else if (count == 1) {
+      } else if (count == winCondition - 4) {
         if (openEnds == 2) {
           totalScore += 20;
         }
@@ -1347,6 +1555,10 @@ class _CaroGamePageState extends State<CaroGamePage> {
             ),
           ),
         ),
+        if (_showFireworks)
+          const IgnorePointer(
+            child: FireworksOverlay(),
+          ),
         ],
       ),
     );
@@ -1529,7 +1741,18 @@ class _CaroGamePageState extends State<CaroGamePage> {
             ),
           ),
           const SizedBox(height: 6),
-          _buildSizeSelectorChips(),
+          _buildBoardSizeSlider(),
+          const SizedBox(height: 12),
+          const Text(
+            'Số quân liên tiếp để thắng:',
+            style: TextStyle(
+              fontSize: 12,
+              color: Color(0xFF94A3B8),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 6),
+          _buildWinConditionSelectorChips(),
           const SizedBox(height: 12),
           const Text(
             'Thời gian mỗi lượt:',
@@ -1546,23 +1769,100 @@ class _CaroGamePageState extends State<CaroGamePage> {
     );
   }
 
-  Widget _buildSizeSelectorChips() {
+  Widget _buildBoardSizeSlider() {
     final bool isInteractionBlocked = isOnlineMode && !isOpponentJoined;
+
+    return Row(
+      children: [
+        Expanded(
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: const Color(0xFF06B6D4),
+              inactiveTrackColor: const Color(0xFF0F172A),
+              trackShape: const RoundedRectSliderTrackShape(),
+              trackHeight: 4.0,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8.0),
+              thumbColor: const Color(0xFF06B6D4),
+              overlayColor: const Color(0xFF06B6D4).withAlpha(32),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 16.0),
+              tickMarkShape: const RoundSliderTickMarkShape(),
+              activeTickMarkColor: const Color(0xFF06B6D4),
+              inactiveTickMarkColor: const Color(0xFF334155),
+              valueIndicatorShape: const PaddleSliderValueIndicatorShape(),
+              valueIndicatorColor: const Color(0xFF06B6D4),
+              valueIndicatorTextStyle: const TextStyle(
+                color: Colors.white,
+              ),
+            ),
+            child: Slider(
+              value: boardSize.toDouble(),
+              min: 3,
+              max: 20,
+              divisions: 17,
+              label: '${boardSize}x$boardSize',
+              onChanged: isInteractionBlocked
+                  ? null
+                  : (double value) {
+                      setState(() {
+                        boardSize = value.round();
+                        if (boardSize < winCondition) {
+                          if (boardSize >= 7) {
+                            // Keep
+                          } else if (boardSize >= 5) {
+                            winCondition = 5;
+                          } else {
+                            winCondition = 3;
+                          }
+                        }
+                        _initGameData();
+                      });
+                    },
+              onChangeEnd: isInteractionBlocked
+                  ? null
+                  : (double value) {
+                      handleChangeSize(boardSize, winCondition);
+                    },
+            ),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F172A),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: const Color(0xFF334155)),
+          ),
+          child: Text(
+            '${boardSize}x$boardSize',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF06B6D4),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWinConditionSelectorChips() {
+    final bool isInteractionBlocked = isOnlineMode && !isOpponentJoined;
+    final options = [3, 5, 7];
 
     return Wrap(
       spacing: 8,
       runSpacing: 8,
-      children: boardSizeOptions.map((option) {
-        final int size = option['size'];
-        final int win = option['win'];
-        final String label = option['label'];
-        final bool isSelected = boardSize == size && winCondition == win;
+      children: options.map((winVal) {
+        final bool isSelected = winCondition == winVal;
+        final bool isEnabled = boardSize >= winVal;
 
         return ChoiceChip(
           label: Text(
-            label,
+            '$winVal quân',
             style: TextStyle(
-              color: isSelected ? Colors.white : const Color(0xFF94A3B8),
+              color: isSelected
+                  ? Colors.white
+                  : (isEnabled ? const Color(0xFF94A3B8) : const Color(0xFF475569)),
               fontSize: 12,
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
             ),
@@ -1580,11 +1880,11 @@ class _CaroGamePageState extends State<CaroGamePage> {
               width: 1,
             ),
           ),
-          onSelected: isInteractionBlocked
+          onSelected: isInteractionBlocked || !isEnabled
               ? null
               : (selected) {
                   if (selected) {
-                    handleChangeSize(size, win);
+                    handleChangeSize(boardSize, winVal);
                   }
                 },
         );
@@ -1792,11 +2092,25 @@ class _CaroGamePageState extends State<CaroGamePage> {
           } else {
             oWins++;
           }
-          _showEndGameDialog(
-            'Chiến Thắng! 🎉',
-            'Người chơi $currentSymbol đã giành chiến thắng thuyết phục!',
-            currentSymbol,
-          );
+          
+          // Kích hoạt pháo hoa
+          setState(() {
+            _showFireworks = true;
+          });
+
+          // Hẹn giờ 5 giây hiển thị pháo hoa và ô cờ nổi bật nhấp nháy, sau đó mới hiện Dialog hỏi ván mới
+          Timer(const Duration(seconds: 5), () {
+            if (mounted) {
+              setState(() {
+                _showFireworks = false;
+              });
+              _showEndGameDialog(
+                'Chiến Thắng! 🎉',
+                'Người chơi $currentSymbol đã giành chiến thắng thuyết phục!',
+                currentSymbol,
+              );
+            }
+          });
         } else if (checkDraw()) {
           _cancelTimer();
           gameOver = true;
@@ -2343,19 +2657,19 @@ class _CaroGamePageState extends State<CaroGamePage> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFF334155), width: 1),
       ),
-      child: const Column(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          const Text(
             'Luật Chơi',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 8),
           Text(
             '• Người chơi lần lượt đánh X và O.\n'
-            '• Để thắng, bạn cần đạt được số quân cờ liên tiếp theo hàng ngang, hàng dọc hoặc chéo như quy định (3 ô cho 3x3, 5 ô cho các cỡ khác).\n'
+            '• Để thắng, bạn cần đạt được $winCondition quân cờ liên tiếp theo hàng ngang, hàng dọc hoặc chéo.\n'
             '• Hỗ trợ chơi Local trên 1 máy hoặc Online thông qua mạng nội bộ Wifi.',
-            style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8), height: 1.5),
+            style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8), height: 1.5),
           ),
         ],
       ),
@@ -2392,18 +2706,136 @@ class BoardCell extends StatefulWidget {
   State<BoardCell> createState() => _BoardCellState();
 }
 
-class _BoardCellState extends State<BoardCell> {
+class _BoardCellState extends State<BoardCell> with SingleTickerProviderStateMixin {
   bool _isHovered = false;
+  late AnimationController _blinkController;
+  late Animation<double> _blinkAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    // Khởi tạo AnimationController để điều khiển hiệu ứng nhấp nháy của ô thắng cuộc
+    // chu kỳ nhấp nháy là 1000ms (1 giây)
+    _blinkController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    );
+
+    // Tạo hiệu ứng nhấp nháy tuần hoàn nhẹ nhàng (độ mờ từ 1.0 về 0.4 rồi lặp lại)
+    _blinkAnimation = Tween<double>(begin: 1.0, end: 0.4).animate(
+      CurvedAnimation(
+        parent: _blinkController,
+        curve: Curves.easeInOut,
+      ),
+    );
+
+    // Nếu lúc vẽ ô này đã thuộc nhóm thắng cuộc, kích hoạt nhấp nháy ngay lập tức
+    if (widget.isWinning) {
+      _blinkController.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant BoardCell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Kích hoạt hiệu ứng nhấp nháy khi trạng thái thắng cuộc được bật
+    if (widget.isWinning && !oldWidget.isWinning) {
+      _blinkController.repeat(reverse: true);
+    }
+    // Dừng hiệu ứng khi reset bàn cờ hoặc tắt trạng thái thắng cuộc
+    else if (!widget.isWinning && oldWidget.isWinning) {
+      _blinkController.stop();
+      _blinkController.value = 0.0; // Đưa về trạng thái hiển thị rõ nét mặc định
+    }
+  }
+
+  @override
+  void dispose() {
+    // Giải phóng tài nguyên cho AnimationController để tránh rò rỉ bộ nhớ
+    _blinkController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    // Thiết lập màu sắc và đường viền mặc định
     Color cellColor = const Color(0xFF1E293B);
+    Color borderColor = const Color(0xFF334155);
+    double borderWidth = 0.5;
+
+    // Thay đổi giao diện dựa trên trạng thái của ô cờ
     if (widget.isWinning) {
-      cellColor = const Color(0x40F59E0B); // Vàng thắng cuộc
+      // Khi thắng cuộc: Đổi sang màu của người thắng cuộc (X: xanh cyan, O: đỏ rose)
+      final Color winnerColor = (widget.symbol == 'X')
+          ? const Color(0xFF06B6D4)
+          : const Color(0xFFF43F5E);
+      cellColor = winnerColor.withOpacity(0.35);
+      borderColor = winnerColor;
+      borderWidth = 2.5;
     } else if (widget.isSuggested) {
-      cellColor = const Color(0x3310B981); // Xanh lá gợi ý AI
+      // Khi được gợi ý nước đi: Đổi sang màu xanh lá
+      cellColor = const Color(0x3310B981);
+      borderColor = const Color(0xFF10B981);
+      borderWidth = 2.0;
     } else if (widget.isLastMove) {
-      cellColor = const Color(0xFF334155); // Xám nổi bật nước cuối
+      // Nước đi vừa đánh: Nổi bật với màu xám đậm và viền Cyan xanh lam
+      cellColor = const Color(0xFF334155);
+      borderColor = const Color(0xFF06B6D4);
+      borderWidth = 1.5;
+    }
+
+    Widget cellContent;
+    if (widget.symbol.isNotEmpty) {
+      if (widget.isWinning) {
+        // Đối với ô thắng cuộc, phóng to riêng quân cờ (X hoặc O) lên 1.25 lần để nổi bật
+        cellContent = Transform.scale(
+          scale: 1.25,
+          child: _buildPieceSymbol(widget.symbol),
+        );
+      } else if (widget.isLastMove) {
+        // CHỈ nước đi vừa đánh (isLastMove) mới có hiệu ứng phóng to trong 200ms
+        cellContent = TweenAnimationBuilder<double>(
+          key: ValueKey('animate_${widget.row}_${widget.col}_${widget.symbol}'),
+          tween: Tween<double>(begin: 0.0, end: 1.0),
+          duration: const Duration(milliseconds: 200), // Thời lượng đúng 200ms
+          curve: Curves.easeOutBack, // Hiệu ứng đàn hồi nhẹ tạo sự sống động
+          builder: (context, value, child) {
+            return Transform.scale(
+              scale: value,
+              child: _buildPieceSymbol(widget.symbol),
+            );
+          },
+        );
+      } else {
+        // Các ô cờ cũ khác vẽ tĩnh hoàn toàn để tối ưu hiệu suất, tránh giật lag khi có 400 ô
+        cellContent = _buildPieceSymbol(widget.symbol);
+      }
+    } else if (_isHovered) {
+      // Hiển thị quân cờ mờ xem trước khi rê chuột qua ô trống
+      cellContent = _buildPieceSymbol(widget.activePlayerSymbol, isHover: true);
+    } else {
+      cellContent = const SizedBox.shrink();
+    }
+
+    Widget boardCellWidget = Container(
+      decoration: BoxDecoration(
+        color: cellColor,
+        border: Border.all(
+          color: borderColor,
+          width: borderWidth,
+        ),
+      ),
+      child: Center(
+        child: cellContent,
+      ),
+    );
+
+    // Nếu ô cờ thuộc đường thắng cuộc, bọc trong FadeTransition để thực hiện nhấp nháy nhẹ
+    if (widget.isWinning) {
+      boardCellWidget = FadeTransition(
+        opacity: _blinkAnimation,
+        child: boardCellWidget,
+      );
     }
 
     return MouseRegion(
@@ -2411,46 +2843,7 @@ class _BoardCellState extends State<BoardCell> {
       onExit: (_) => setState(() => _isHovered = false),
       child: GestureDetector(
         onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          decoration: BoxDecoration(
-            color: cellColor,
-            border: Border.all(
-              color: widget.isWinning
-                  ? const Color(0xFFF59E0B)
-                  : (widget.isSuggested
-                        ? const Color(0xFF10B981)
-                        : (widget.isLastMove
-                              ? const Color(0xFF06B6D4)
-                              : const Color(0xFF334155))),
-              width: widget.isWinning
-                  ? 2.0
-                  : (widget.isSuggested
-                        ? 2.0
-                        : (widget.isLastMove ? 1.5 : 0.5)),
-            ),
-          ),
-          child: Center(
-            child: widget.symbol.isNotEmpty
-                ? TweenAnimationBuilder<double>(
-                    tween: Tween<double>(begin: 0.0, end: 1.0),
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOutBack,
-                    builder: (context, value, child) {
-                      return Transform.scale(
-                        scale: value,
-                        child: _buildPieceSymbol(widget.symbol),
-                      );
-                    },
-                  )
-                : (_isHovered
-                      ? _buildPieceSymbol(
-                          widget.activePlayerSymbol,
-                          isHover: true,
-                        )
-                      : const SizedBox.shrink()),
-          ),
-        ),
+        child: boardCellWidget,
       ),
     );
   }
@@ -2485,4 +2878,194 @@ class _BoardCellState extends State<BoardCell> {
       );
     }
   }
+}
+
+// ==================== HỆ THỐNG PHÁO HOA TỰ BẮN KHI CHIẾN THẮNG ====================
+
+/// Đại diện cho một hạt tia lửa pháo hoa
+class Particle {
+  double x;
+  double y;
+  double vx;
+  double vy;
+  Color color;
+  double size;
+  double alpha = 1.0;
+  double life; // Tuổi thọ hạt (giảm dần từ 1.0 về 0.0)
+
+  Particle({
+    required this.x,
+    required this.y,
+    required this.vx,
+    required this.vy,
+    required this.color,
+    required this.size,
+    required this.life,
+  });
+
+  void update() {
+    x += vx;
+    y += vy;
+    vy += 0.12; // Lực trọng trường kéo các tia rơi xuống nhẹ nhàng
+    vx *= 0.98; // Lực cản không khí
+    vy *= 0.98;
+    life -= 0.015; // Giảm dần tuổi thọ hạt sau mỗi khung hình
+    if (life < 0) life = 0;
+    alpha = life;
+  }
+}
+
+/// Đại diện cho một phát bắn pháo hoa từ dưới đất lên rồi nổ tung
+class Firework {
+  double centerX;
+  double centerY;
+  List<Particle> particles = [];
+  bool exploded = false;
+  double vy = -12.0; // Tốc độ bắn lên ban đầu
+  double currentY;
+
+  Firework(double screenWidth, double screenHeight)
+      : centerX = Random().nextDouble() * screenWidth,
+        centerY = screenHeight,
+        currentY = screenHeight;
+
+  void update() {
+    if (!exploded) {
+      currentY += vy;
+      vy += 0.18; // Trọng lực làm giảm dần vận tốc bay lên
+      if (vy >= -1.5) {
+        explode();
+      }
+    } else {
+      for (final p in particles) {
+        p.update();
+      }
+      particles.removeWhere((p) => p.life <= 0);
+    }
+  }
+
+  void explode() {
+    exploded = true;
+    final random = Random();
+    final int particleCount = 45 + random.nextInt(25); // Số tia pháo nổ ra (từ 45 - 70 tia)
+    
+    // Tạo màu ngẫu nhiên rực rỡ từ bảng màu HSV
+    final Color color = HSVColor.fromAHSV(
+      1.0,
+      random.nextDouble() * 360,
+      0.85,
+      1.0,
+    ).toColor();
+
+    for (int i = 0; i < particleCount; i++) {
+      final double angle = random.nextDouble() * 2 * pi;
+      final double speed = 1.5 + random.nextDouble() * 5.5;
+      particles.add(Particle(
+        x: centerX,
+        y: currentY,
+        vx: cos(angle) * speed,
+        vy: sin(angle) * speed,
+        color: color,
+        size: 2.5 + random.nextDouble() * 3.5,
+        life: 1.0,
+      ));
+    }
+  }
+
+  bool get isDone => exploded && particles.isEmpty;
+}
+
+/// Widget phủ toàn màn hình dùng để cập nhật và vẽ pháo hoa
+class FireworksOverlay extends StatefulWidget {
+  const FireworksOverlay({super.key});
+
+  @override
+  State<FireworksOverlay> createState() => _FireworksOverlayState();
+}
+
+class _FireworksOverlayState extends State<FireworksOverlay>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  final List<Firework> _fireworks = [];
+  final Random _random = Random();
+  double _width = 0;
+  double _height = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Khởi tạo vòng lặp animation bằng cách sử dụng Ticker của AnimationController
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 1),
+    )..addListener(() {
+        _updatePhysics();
+      });
+    _controller.repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _updatePhysics() {
+    if (_width == 0 || _height == 0) return;
+
+    // Tỉ lệ bắn pháo hoa ngẫu nhiên sau mỗi khung hình (tối đa 6 quả pháo cùng lúc)
+    if (_random.nextDouble() < 0.06 && _fireworks.length < 6) {
+      _fireworks.add(Firework(_width, _height));
+    }
+
+    setState(() {
+      for (final fw in _fireworks) {
+        fw.update();
+      }
+      _fireworks.removeWhere((fw) => fw.isDone);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        _width = constraints.maxWidth;
+        _height = constraints.maxHeight;
+        return CustomPaint(
+          size: Size.infinite,
+          painter: FireworksPainter(_fireworks),
+        );
+      },
+    );
+  }
+}
+
+/// CustomPainter chuyên biệt để vẽ pháo hoa với hiệu năng cực cao
+class FireworksPainter extends CustomPainter {
+  final List<Firework> fireworks;
+
+  FireworksPainter(this.fireworks);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..style = PaintingStyle.fill;
+
+    for (final fw in fireworks) {
+      if (!fw.exploded) {
+        // Vẽ quả pháo đang bay lên có màu trắng/vàng sáng
+        paint.color = const Color(0xFFFEF08A);
+        canvas.drawCircle(Offset(fw.centerX, fw.currentY), 3.5, paint);
+      } else {
+        // Vẽ các tia lửa bắn ra sau khi nổ tung
+        for (final p in fw.particles) {
+          paint.color = p.color.withOpacity(p.alpha);
+          canvas.drawCircle(Offset(p.x, p.y), p.size, paint);
+        }
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
