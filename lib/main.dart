@@ -516,6 +516,11 @@ class _CaroGamePageState extends State<CaroGamePage> {
   // Trạng thái hiển thị pháo hoa khi chiến thắng
   bool _showFireworks = false;
 
+  // --- Các biến phục vụ chế độ đấu với máy (Bot AI) ---
+  bool isVSBot = false; // Có đang chơi với máy không
+  bool isBotEasy = true; // Độ khó của máy (true: Dễ, false: Khó)
+  bool _isBotThinking = false; // Trạng thái máy đang suy nghĩ
+
   @override
   void initState() {
     super.initState();
@@ -541,6 +546,7 @@ class _CaroGamePageState extends State<CaroGamePage> {
     lastMove = null;
     history = [];
     suggestedCell = null;
+    _isBotThinking = false;
   }
 
   // --- LOGIC HỖ TRỢ ĐỒNG HỒ ĐẾM NGƯỢC (TIMER) ---
@@ -976,9 +982,22 @@ class _CaroGamePageState extends State<CaroGamePage> {
   void _executeLocalUndo() {
     if (history.isEmpty || gameOver) return;
     setState(() {
-      final last = history.removeLast();
-      board[last.row][last.col] = '';
-      isXTurn = !isXTurn;
+      // Nếu đấu với máy và có từ 2 nước cờ trở lên, lùi lại 2 nước (nước máy và nước người chơi)
+      if (isVSBot && history.length >= 2) {
+        final lastBotMove = history.removeLast();
+        board[lastBotMove.row][lastBotMove.col] = '';
+        
+        final lastUserMove = history.removeLast();
+        board[lastUserMove.row][lastUserMove.col] = '';
+        
+        isXTurn = true; // Luôn trả lượt cho người chơi
+      } else {
+        // Chế độ 2 người chơi hoặc khi lịch sử chỉ có 1 nước cờ
+        final last = history.removeLast();
+        board[last.row][last.col] = '';
+        isXTurn = !isXTurn;
+      }
+      
       if (history.isNotEmpty) {
         lastMove = [history.last.row, history.last.col];
       } else {
@@ -1194,6 +1213,140 @@ class _CaroGamePageState extends State<CaroGamePage> {
     }
 
     return bestMove;
+  }
+
+  /// Lấy nước đi của Bot dựa theo độ khó (Dễ hoặc Khó)
+  List<int>? _getBotMove() {
+    if (isBotEasy) {
+      // ==================== CHẾ ĐỘ DỄ ====================
+      // Ý tưởng: Đánh giá tất cả các ô ứng viên giống như chế độ Khó,
+      // nhưng sẽ chọn nước đi tốt thứ nhất với xác suất 50%, 
+      // nước đi tốt thứ hai với xác suất 35%, và nước đi tốt thứ ba với xác suất 15%.
+      // Điều này làm Bot vẫn biết tấn công/phòng thủ nhưng thỉnh thoảng mắc sai lầm để người dùng thắng.
+      
+      final String mySym = 'O';
+      final String oppSym = 'X';
+      
+      // Tạo danh sách các ứng viên ô trống trong bán kính 2 ô xung quanh các quân đã đánh
+      List<Map<String, dynamic>> candidates = [];
+      
+      for (int r = 0; r < boardSize; r++) {
+        for (int c = 0; c < boardSize; c++) {
+          if (board[r][c].isEmpty) {
+            if (_hasNeighbor(r, c)) {
+              final int attackScore = _evaluateCellForSymbol(r, c, mySym);
+              final int defenseScore = _evaluateCellForSymbol(r, c, oppSym);
+              final int totalScore = attackScore + defenseScore;
+              candidates.add({
+                'row': r,
+                'col': c,
+                'score': totalScore,
+              });
+            }
+          }
+        }
+      }
+      
+      if (candidates.isEmpty) {
+        return [boardSize ~/ 2, boardSize ~/ 2];
+      }
+      
+      // Sắp xếp các ứng viên theo tổng điểm giảm dần
+      candidates.sort((a, b) => (b['score'] as int).compareTo(a['score'] as int));
+      
+      final double randomValue = Random().nextDouble();
+      
+      if (randomValue < 0.50 || candidates.length < 2) {
+        // 50% chọn nước đi tối ưu nhất
+        return [candidates[0]['row'] as int, candidates[0]['col'] as int];
+      } else if (randomValue < 0.85 || candidates.length < 3) {
+        // 35% chọn nước đi tốt thứ hai
+        return [candidates[1]['row'] as int, candidates[1]['col'] as int];
+      } else {
+        // 15% chọn nước đi tốt thứ ba
+        return [candidates[2]['row'] as int, candidates[2]['col'] as int];
+      }
+    } else {
+      // ==================== CHẾ ĐỘ KHÓ ====================
+      // Luôn luôn chọn nước đi Heuristic tối ưu nhất
+      return _getAIMoveSuggestion();
+    }
+  }
+
+  /// Kích hoạt di chuyển cho Bot với độ trễ 0.5 giây
+  void _triggerBotMove() {
+    if (gameOver || _isBotThinking) return;
+
+    setState(() {
+      _isBotThinking = true;
+    });
+
+    // Trì hoãn 500ms (0.5 giây)
+    Timer(const Duration(milliseconds: 500), () {
+      if (!mounted || gameOver || isXTurn) {
+        if (mounted) {
+          setState(() {
+            _isBotThinking = false;
+          });
+        }
+        return;
+      }
+
+      final botMove = _getBotMove();
+      if (botMove != null) {
+        final int r = botMove[0];
+        final int c = botMove[1];
+
+        setState(() {
+          board[r][c] = 'O';
+          lastMove = [r, c];
+          history.add(Move(row: r, col: c, symbol: 'O'));
+          suggestedCell = null;
+          _isBotThinking = false;
+
+          final winningCombo = checkWinner(r, c, 'O');
+          if (winningCombo != null) {
+            _cancelTimer();
+            winningCells = winningCombo;
+            gameOver = true;
+            oWins++;
+            
+            // Kích hoạt pháo hoa
+            _showFireworks = true;
+
+            // Hẹn giờ 5 giây hiển thị pháo hoa, sau đó hiện Dialog kết quả
+            Timer(const Duration(seconds: 5), () {
+              if (mounted) {
+                setState(() {
+                  _showFireworks = false;
+                });
+                _showEndGameDialog(
+                  'Thất Bại! 😢',
+                  'Máy (quân O) đã giành chiến thắng ván cờ này!',
+                  'O',
+                );
+              }
+            });
+          } else if (checkDraw()) {
+            _cancelTimer();
+            gameOver = true;
+            draws++;
+            _showEndGameDialog(
+              'Hòa Cờ! 🤝',
+              'Hai bên đã hòa nhau trên bàn cờ đầy quân!',
+              '',
+            );
+          } else {
+            isXTurn = true;
+            _startTimer();
+          }
+        });
+      } else {
+        setState(() {
+          _isBotThinking = false;
+        });
+      }
+    });
   }
 
   /// Kiểm tra xem ô cờ có quân cờ lân cận trong bán kính 2 ô hay không
@@ -1618,10 +1771,20 @@ class _CaroGamePageState extends State<CaroGamePage> {
         }
       }
     } else {
-      turnText = isXTurn
-          ? 'Lượt đi: X (Người chơi X)'
-          : 'Lượt đi: O (Người chơi O)';
-      themeColor = isXTurn ? const Color(0xFF06B6D4) : const Color(0xFFF43F5E);
+      if (isVSBot) {
+        if (isXTurn) {
+          turnText = 'Lượt của bạn (X)';
+          themeColor = const Color(0xFF06B6D4);
+        } else {
+          turnText = 'Máy đang suy nghĩ... (O)';
+          themeColor = const Color(0xFFF43F5E);
+        }
+      } else {
+        turnText = isXTurn
+            ? 'Lượt đi: X (Người chơi X)'
+            : 'Lượt đi: O (Người chơi O)';
+        themeColor = isXTurn ? const Color(0xFF06B6D4) : const Color(0xFFF43F5E);
+      }
     }
 
     final bool isTimerActive =
@@ -1732,6 +1895,12 @@ class _CaroGamePageState extends State<CaroGamePage> {
             ),
           ),
           const SizedBox(height: 12),
+          _buildGameModeSelector(),
+          if (isVSBot && !isOnlineMode) ...[
+            const SizedBox(height: 12),
+            _buildDifficultySelector(),
+          ],
+          const SizedBox(height: 12),
           const Text(
             'Kích thước bàn cờ:',
             style: TextStyle(
@@ -1766,6 +1935,134 @@ class _CaroGamePageState extends State<CaroGamePage> {
           _buildTimerSelectorChips(),
         ],
       ),
+    );
+  }
+
+  Widget _buildGameModeSelector() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Chế độ chơi:',
+          style: TextStyle(
+            fontSize: 12,
+            color: Color(0xFF94A3B8),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 6),
+        isOnlineMode
+            ? Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFF334155)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.online_prediction, color: Color(0xFF06B6D4), size: 16),
+                    SizedBox(width: 8),
+                    Text(
+                      'Đấu Online Realtime (PVP)',
+                      style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              )
+            : Row(
+                children: [
+                  ChoiceChip(
+                    label: const Text('2 người'),
+                    selected: !isVSBot,
+                    selectedColor: const Color(0xFF06B6D4),
+                    backgroundColor: const Color(0xFF0F172A),
+                    checkmarkColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    onSelected: (selected) {
+                      if (selected) {
+                        setState(() {
+                          isVSBot = false;
+                          _initGameData();
+                        });
+                      }
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    label: const Text('Đấu với máy'),
+                    selected: isVSBot,
+                    selectedColor: const Color(0xFF06B6D4),
+                    backgroundColor: const Color(0xFF0F172A),
+                    checkmarkColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    onSelected: (selected) {
+                      if (selected) {
+                        setState(() {
+                          isVSBot = true;
+                          _initGameData();
+                        });
+                      }
+                    },
+                  ),
+                ],
+              ),
+      ],
+    );
+  }
+
+  Widget _buildDifficultySelector() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Độ khó của máy:',
+          style: TextStyle(
+            fontSize: 12,
+            color: Color(0xFF94A3B8),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            ChoiceChip(
+              label: const Text('Dễ'),
+              selected: isBotEasy,
+              selectedColor: Colors.amber,
+              backgroundColor: const Color(0xFF0F172A),
+              checkmarkColor: Colors.black,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              onSelected: (selected) {
+                if (selected) {
+                  setState(() {
+                    isBotEasy = true;
+                    _initGameData();
+                  });
+                }
+              },
+            ),
+            const SizedBox(width: 8),
+            ChoiceChip(
+              label: const Text('Khó'),
+              selected: !isBotEasy,
+              selectedColor: const Color(0xFFF43F5E),
+              backgroundColor: const Color(0xFF0F172A),
+              checkmarkColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              onSelected: (selected) {
+                if (selected) {
+                  setState(() {
+                    isBotEasy = false;
+                    _initGameData();
+                  });
+                }
+              },
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -2020,6 +2317,9 @@ class _CaroGamePageState extends State<CaroGamePage> {
   /// Xử lý chạm vào ô cờ
   void _handleCellTap(int row, int col) async {
     if (gameOver || board[row][col].isNotEmpty) return;
+    
+    // Nếu đang đấu với máy và không phải lượt của X (người chơi) hoặc máy đang suy nghĩ, chặn không cho đánh
+    if (!isOnlineMode && isVSBot && (!isXTurn || _isBotThinking)) return;
 
     if (isOnlineMode) {
       if (!isConnected || !isOpponentJoined) return;
@@ -2123,6 +2423,11 @@ class _CaroGamePageState extends State<CaroGamePage> {
         } else {
           isXTurn = !isXTurn;
           _startTimer();
+
+          // Nếu đang chơi chế độ Đấu với máy và vừa kết thúc lượt đi của X (người chơi), kích hoạt Bot di chuyển
+          if (isVSBot && !isXTurn) {
+            _triggerBotMove();
+          }
         }
       });
     }
@@ -2510,6 +2815,7 @@ class _CaroGamePageState extends State<CaroGamePage> {
               } else {
                 setState(() {
                   isOnlineMode = true;
+                  isVSBot = false; // Tắt đấu với máy khi chơi Online
                 });
               }
             },
@@ -2614,6 +2920,7 @@ class _CaroGamePageState extends State<CaroGamePage> {
                   } else {
                     setState(() {
                       isOnlineMode = true;
+                      isVSBot = false; // Tắt đấu với máy khi chơi Online
                     });
                   }
                 },
