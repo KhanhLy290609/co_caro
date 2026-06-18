@@ -10,19 +10,20 @@ Tài liệu này ghi chép lại các thiết lập deploy tự động cho dự
    - Bổ sung xác nhận trước khi đăng xuất.
    - Thêm hiệu ứng phóng to quân cờ mới trong 200ms và highlight nhấp nháy màu xanh/đỏ theo người thắng cuộc.
    - Tích hợp hệ thống pháo hoa hạt (particle system) kéo dài 5 giây khi có người thắng.
+   - Tích hợp chế độ chơi Đấu với Máy (Bot AI) có hai độ khó Dễ và Khó, tự động đồng bộ nút Đi Lại (Undo) lùi cả nước cờ của máy và của người chơi.
 2. **`test/widget_test.dart`** (Chỉnh sửa):
    - Cập nhật smoke test khớp với giao diện tiếng Việt có dấu.
 3. **`.github/workflows/deploy.yml`** (Tạo mới):
-   - Workflow tự động chạy khi push lên nhánh `Sweet`. Tự động cài đặt Flutter, build web (`--base-href "/co_caro/"`) và deploy trực tiếp lên GitHub Pages.
-4. **`DEPLOYS.md`** (Tạo mới):
-   - File này (Tài liệu hướng dẫn deploy).
+   - Workflow tự động chạy khi push lên nhánh `main`. Tự động cài đặt Flutter, build web (`--base-href "/co_caro/"`) và deploy trực tiếp lên GitHub Pages.
+4. **`DEPLOYS.md`** (Cập nhật):
+   - Nhật ký deploy và cập nhật hướng dẫn các tính năng.
 
 ## Các lệnh Git & GitHub đã sử dụng
 
 Các lệnh sau được chạy để đồng bộ hóa và kích hoạt deploy:
-- `git add .` (Đưa toàn bộ thay đổi vào hàng đợi)
-- `git commit -m "feat: add registration, animations, and pages deploy workflow"` (Commit cục bộ)
-- `git push origin Sweet` (Push code lên nhánh Sweet trên GitHub)
+- `git add lib/main.dart` (Đưa các chỉnh sửa vào hàng đợi)
+- `git commit -m "feat: Tich hop che do choi Dau voi may (De/Kho) va dong bo hoa Undo"` (Commit cục bộ)
+- `git push origin main` (Push code lên nhánh main trên GitHub)
 - `gh run list` (Theo dõi tiến trình chạy workflow từ dòng lệnh)
 
 ## Link chạy online (GitHub Pages)
