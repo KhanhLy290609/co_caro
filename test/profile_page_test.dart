@@ -85,6 +85,7 @@ void main() {
     // Tim nut Doi mat khau qua Icon vpn_key va nhan
     final submitButton = find.byIcon(Icons.vpn_key);
     expect(submitButton, findsOneWidget);
+    await tester.ensureVisible(submitButton);
     await tester.tap(submitButton);
     await tester.pumpAndSettle();
 
@@ -95,6 +96,7 @@ void main() {
     // Nhap mat khau moi duoi 6 ky tu
     final newPasswordInput = find.widgetWithText(TextFormField, 'Mật khẩu mới');
     await tester.enterText(newPasswordInput, '123');
+    await tester.ensureVisible(submitButton);
     await tester.tap(submitButton);
     await tester.pumpAndSettle();
     expect(find.text('Mật khẩu mới phải có ít nhất 6 ký tự'), findsOneWidget);
@@ -103,6 +105,7 @@ void main() {
     await tester.enterText(newPasswordInput, '123456');
     final confirmPasswordInput = find.widgetWithText(TextFormField, 'Nhập lại mật khẩu mới');
     await tester.enterText(confirmPasswordInput, '123457');
+    await tester.ensureVisible(submitButton);
     await tester.tap(submitButton);
     await tester.pumpAndSettle();
     expect(find.text('Mật khẩu xác nhận không khớp!'), findsOneWidget);
@@ -120,7 +123,9 @@ void main() {
     await tester.enterText(find.widgetWithText(TextFormField, 'Mật khẩu mới'), 'new_pwd_123');
     await tester.enterText(find.widgetWithText(TextFormField, 'Nhập lại mật khẩu mới'), 'new_pwd_123');
 
-    await tester.tap(find.byIcon(Icons.vpn_key));
+    final submitButton = find.byIcon(Icons.vpn_key);
+    await tester.ensureVisible(submitButton);
+    await tester.tap(submitButton);
     await tester.pump();
 
     // Verify rang signInWithPassword & updateUser duoc goi

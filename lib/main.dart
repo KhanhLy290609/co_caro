@@ -1844,7 +1844,18 @@ class _CaroGamePageState extends State<CaroGamePage> {
                 if (value == 'profile') {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (context) => const ProfilePage(),
+                      builder: (context) => ProfilePage(
+                        initialDiamonds: userDiamonds,
+                        initialUnlockedIcons: unlockedIcons,
+                        initialSelectedIcon: selectedIcon,
+                        onProfileUpdated: (diamonds, unlocked, selected) {
+                          setState(() {
+                            userDiamonds = diamonds;
+                            unlockedIcons = unlocked;
+                            selectedIcon = selected;
+                          });
+                        },
+                      ),
                     ),
                   );
                 } else if (value == 'logout') {
