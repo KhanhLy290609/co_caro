@@ -528,6 +528,8 @@ class _CaroGamePageState extends State<CaroGamePage> {
   List<String> unlockedIcons = ['X', 'O'];
   String selectedIcon = 'X';
   bool useDatabaseTable = true;
+  List<MatchRecord> matchHistory = [];
+  bool useHistoryDatabase = true;
 
   @override
   void initState() {
@@ -535,6 +537,7 @@ class _CaroGamePageState extends State<CaroGamePage> {
     myPlayerId = '${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(1000)}';
     _initGameData();
     _fetchOrCreateProfile();
+    _fetchMatchHistory();
     _startTimer(); // Khởi chạy timer ban đầu cho X đi trước
   }
 
@@ -631,6 +634,98 @@ class _CaroGamePageState extends State<CaroGamePage> {
       }
     } catch (e) {
       print('Lỗi cập nhật userMetadata: $e');
+    }
+  }
+
+  Future<void> _fetchMatchHistory() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final response = await supabase
+          .from('match_history')
+          .select()
+          .order('played_at', ascending: false)
+          .limit(10);
+      
+      final List<MatchRecord> loaded = (response as List)
+          .map((item) => MatchRecord.fromJson(item))
+          .toList();
+      
+      if (mounted) {
+        setState(() {
+          matchHistory = loaded;
+          useHistoryDatabase = true;
+        });
+      }
+    } catch (e) {
+      print('Lỗi tải lịch sử từ DB, chuyển sang fallback userMetadata: $e');
+      final meta = user.userMetadata;
+      final List<dynamic> localData = meta?['match_history'] ?? [];
+      final List<MatchRecord> loaded = localData
+          .map((item) => MatchRecord.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+      if (mounted) {
+        setState(() {
+          matchHistory = loaded;
+          useHistoryDatabase = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _saveMatchRecord({
+    required String opponent,
+    required String mode,
+    required String result,
+  }) async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    final record = MatchRecord(
+      opponent: opponent,
+      mode: mode,
+      result: result,
+      playedAt: DateTime.now(),
+    );
+
+    if (mounted) {
+      setState(() {
+        matchHistory.insert(0, record);
+        if (matchHistory.length > 10) {
+          matchHistory = matchHistory.sublist(0, 10);
+        }
+      });
+    }
+
+    if (useHistoryDatabase) {
+      try {
+        await supabase.from('match_history').insert({
+          'user_id': user.id,
+          'opponent': opponent,
+          'mode': mode,
+          'result': result,
+          'played_at': record.playedAt.toIso8601String(),
+        });
+        return;
+      } catch (e) {
+        print('Lỗi lưu lịch sử lên DB, chuyển sang fallback userMetadata: $e');
+        useHistoryDatabase = false;
+      }
+    }
+
+    // Fallback: Lưu vào user_metadata
+    try {
+      final List<Map<String, dynamic>> serializedHistory =
+          matchHistory.map((r) => r.toJson()).toList();
+      await supabase.auth.updateUser(UserAttributes(
+        data: {
+          ...user.userMetadata ?? {},
+          'match_history': serializedHistory,
+        },
+      ));
+    } catch (e) {
+      print('Lỗi cập nhật userMetadata lịch sử: $e');
     }
   }
 
@@ -731,9 +826,25 @@ class _CaroGamePageState extends State<CaroGamePage> {
         if (isVSBot) {
           if (isXTurn) {
             _updateDiamonds(-5);
+            _saveMatchRecord(
+              opponent: isBotEasy ? 'Máy (Dễ)' : 'Máy (Khó)',
+              mode: 'vs_bot',
+              result: 'loss',
+            );
           } else {
             _updateDiamonds(10);
+            _saveMatchRecord(
+              opponent: isBotEasy ? 'Máy (Dễ)' : 'Máy (Khó)',
+              mode: 'vs_bot',
+              result: 'win',
+            );
           }
+        } else {
+          _saveMatchRecord(
+            opponent: 'Người chơi O',
+            mode: 'local',
+            result: isXTurn ? 'loss' : 'win',
+          );
         }
         _showEndGameDialog(
           'Hết Giờ! ⏰',
@@ -989,8 +1100,24 @@ class _CaroGamePageState extends State<CaroGamePage> {
       if (isOnlineMode) {
         if (winnerSymbol == mySymbol) {
           _updateDiamonds(10);
+          _saveMatchRecord(
+            opponent: 'Đối thủ (Online)',
+            mode: 'online',
+            result: 'win',
+          );
         } else if (winnerSymbol.isNotEmpty) {
           _updateDiamonds(-5);
+          _saveMatchRecord(
+            opponent: 'Đối thủ (Online)',
+            mode: 'online',
+            result: 'loss',
+          );
+        } else {
+          _saveMatchRecord(
+            opponent: 'Đối thủ (Online)',
+            mode: 'online',
+            result: 'draw',
+          );
         }
       }
     }
@@ -1432,6 +1559,11 @@ class _CaroGamePageState extends State<CaroGamePage> {
             gameOver = true;
             oWins++;
             _updateDiamonds(-5);
+            _saveMatchRecord(
+              opponent: isBotEasy ? 'Máy (Dễ)' : 'Máy (Khó)',
+              mode: 'vs_bot',
+              result: 'loss',
+            );
             
             // Kích hoạt pháo hoa
             _showFireworks = true;
@@ -1725,6 +1857,8 @@ class _CaroGamePageState extends State<CaroGamePage> {
                                         const SizedBox(height: 16),
                                         _buildControlPanel(),
                                         const SizedBox(height: 16),
+                                        _buildMatchHistoryCard(),
+                                        const SizedBox(height: 16),
                                         _buildRulesCard(),
                                       ],
                                     ),
@@ -1763,6 +1897,8 @@ class _CaroGamePageState extends State<CaroGamePage> {
                                 _buildConfigCard(),
                                 const SizedBox(height: 12),
                                 _buildScoreboardCompact(),
+                                const SizedBox(height: 12),
+                                _buildMatchHistoryCard(),
                                 const SizedBox(height: 12),
                                 Expanded(
                                   child: ClipRRect(
@@ -2616,11 +2752,33 @@ class _CaroGamePageState extends State<CaroGamePage> {
             xWins++;
             if (isVSBot) {
               _updateDiamonds(10);
+              _saveMatchRecord(
+                opponent: isBotEasy ? 'Máy (Dễ)' : 'Máy (Khó)',
+                mode: 'vs_bot',
+                result: 'win',
+              );
+            } else {
+              _saveMatchRecord(
+                opponent: 'Người chơi O',
+                mode: 'local',
+                result: 'win',
+              );
             }
           } else {
             oWins++;
             if (isVSBot) {
               _updateDiamonds(-5);
+              _saveMatchRecord(
+                opponent: isBotEasy ? 'Máy (Dễ)' : 'Máy (Khó)',
+                mode: 'vs_bot',
+                result: 'loss',
+              );
+            } else {
+              _saveMatchRecord(
+                opponent: 'Người chơi O',
+                mode: 'local',
+                result: 'loss',
+              );
             }
           }
           
@@ -2646,6 +2804,11 @@ class _CaroGamePageState extends State<CaroGamePage> {
           _cancelTimer();
           gameOver = true;
           draws++;
+          _saveMatchRecord(
+            opponent: isVSBot ? (isBotEasy ? 'Máy (Dễ)' : 'Máy (Khó)') : 'Người chơi O',
+            mode: isVSBot ? 'vs_bot' : 'local',
+            result: 'draw',
+          );
           _showEndGameDialog(
             'Hòa Cờ! 🤝',
             'Hai bên đã hòa nhau trên bàn cờ đầy quân!',
@@ -3186,6 +3349,110 @@ class _CaroGamePageState extends State<CaroGamePage> {
     );
   }
 
+  Widget _buildMatchHistoryCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF334155), width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.history_rounded, color: Color(0xFF06B6D4), size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Lịch Sử Đấu (10 trận gần nhất)',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+              const Spacer(),
+              if (!useHistoryDatabase)
+                const Tooltip(
+                  message: 'Đang lưu offline trên máy',
+                  child: Icon(Icons.cloud_off_rounded, color: Colors.amber, size: 16),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (matchHistory.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                'Chưa có trận đấu nào được lưu.',
+                style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
+              ),
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: matchHistory.length,
+              separatorBuilder: (context, index) => const Divider(color: Color(0xFF334155), height: 12),
+              itemBuilder: (context, index) {
+                final record = matchHistory[index];
+                
+                String modeIcon = '👥';
+                if (record.mode == 'vs_bot') modeIcon = '🤖';
+                if (record.mode == 'online') modeIcon = '🌐';
+
+                Color resultColor = const Color(0xFF64748B);
+                String resultText = 'Hòa';
+                if (record.result == 'win') {
+                  resultColor = const Color(0xFF06B6D4);
+                  resultText = 'Thắng';
+                } else if (record.result == 'loss') {
+                  resultColor = const Color(0xFFF43F5E);
+                  resultText = 'Thua';
+                }
+
+                final String formattedDate = 
+                    '${record.playedAt.day.toString().padLeft(2, '0')}/${record.playedAt.month.toString().padLeft(2, '0')} ${record.playedAt.hour.toString().padLeft(2, '0')}:${record.playedAt.minute.toString().padLeft(2, '0')}';
+
+                return Row(
+                  children: [
+                    Text(modeIcon, style: const TextStyle(fontSize: 16)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            record.opponent,
+                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            formattedDate,
+                            style: const TextStyle(color: Color(0xFF64748B), fontSize: 10),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: resultColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: resultColor, width: 1),
+                      ),
+                      child: Text(
+                        resultText,
+                        style: TextStyle(color: resultColor, fontSize: 10, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
   /// Bảng luật chơi
   Widget _buildRulesCard() {
     return Container(
@@ -3599,4 +3866,34 @@ class FireworksPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+class MatchRecord {
+  final String opponent;
+  final String mode; // 'vs_bot', 'online', 'local'
+  final String result; // 'win', 'loss', 'draw'
+  final DateTime playedAt;
+
+  MatchRecord({
+    required this.opponent,
+    required this.mode,
+    required this.result,
+    required this.playedAt,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'opponent': opponent,
+        'mode': mode,
+        'result': result,
+        'played_at': playedAt.toIso8601String(),
+      };
+
+  factory MatchRecord.fromJson(Map<String, dynamic> json) {
+    return MatchRecord(
+      opponent: json['opponent'] ?? 'Không rõ',
+      mode: json['mode'] ?? 'local',
+      result: json['result'] ?? 'draw',
+      playedAt: DateTime.parse(json['played_at'] ?? DateTime.now().toIso8601String()),
+    );
+  }
 }
