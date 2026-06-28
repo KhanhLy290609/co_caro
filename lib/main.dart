@@ -1849,12 +1849,22 @@ class _CaroGamePageState extends State<CaroGamePage> {
                 ),
                 const PopupMenuDivider(),
                 const PopupMenuItem<String>(
-                  value: 'profile',
+                  value: 'shop',
                   child: Row(
                     children: [
                       Icon(Icons.storefront_rounded, size: 18, color: Color(0xFF06B6D4)),
                       SizedBox(width: 8),
-                      Text('Cửa hàng & Hồ sơ', style: TextStyle(fontSize: 14)),
+                      Text('Cửa hàng Icon', style: TextStyle(fontSize: 14)),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'profile',
+                  child: Row(
+                    children: [
+                      Icon(Icons.person_outline_rounded, size: 18, color: Color(0xFF06B6D4)),
+                      SizedBox(width: 8),
+                      Text('Trang cá nhân', style: TextStyle(fontSize: 14)),
                     ],
                   ),
                 ),
@@ -1876,10 +1886,10 @@ class _CaroGamePageState extends State<CaroGamePage> {
                 ),
               ],
               onSelected: (String value) {
-                if (value == 'profile') {
+                if (value == 'shop') {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (context) => ProfilePage(
+                      builder: (context) => ShopPage(
                         initialDiamonds: userDiamonds,
                         initialUnlockedIcons: unlockedIcons,
                         initialSelectedIcon: selectedIcon,
@@ -1892,6 +1902,12 @@ class _CaroGamePageState extends State<CaroGamePage> {
                           });
                         },
                       ),
+                    ),
+                  );
+                } else if (value == 'profile') {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const ProfilePage(),
                     ),
                   );
                 } else if (value == 'logout') {
