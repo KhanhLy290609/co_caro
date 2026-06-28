@@ -1609,6 +1609,24 @@ class _CaroGamePageState extends State<CaroGamePage> {
                       suggestedCell![0] == row &&
                       suggestedCell![1] == col;
 
+                  String xIcon = 'X';
+                  String oIcon = 'O';
+                  if (isVSBot) {
+                    xIcon = selectedIcon;
+                    oIcon = 'O';
+                  } else if (isOnlineMode) {
+                    if (mySymbol == 'X') {
+                      xIcon = selectedIcon;
+                      oIcon = 'O';
+                    } else if (mySymbol == 'O') {
+                      xIcon = 'X';
+                      oIcon = selectedIcon;
+                    }
+                  } else {
+                    xIcon = 'X';
+                    oIcon = 'O';
+                  }
+
                   return BoardCell(
                     row: row,
                     col: col,
@@ -1618,6 +1636,8 @@ class _CaroGamePageState extends State<CaroGamePage> {
                     isSuggested: isSuggested,
                     activePlayerSymbol: isXTurn ? 'X' : 'O',
                     cellWidth: cellWidth,
+                    playerXIcon: xIcon,
+                    playerOIcon: oIcon,
                     onTap: () => _handleCellTap(row, col),
                   );
                 },
@@ -3142,6 +3162,8 @@ class BoardCell extends StatefulWidget {
   final bool isSuggested;
   final String activePlayerSymbol;
   final double cellWidth;
+  final String playerXIcon;
+  final String playerOIcon;
   final VoidCallback onTap;
 
   const BoardCell({
@@ -3154,6 +3176,8 @@ class BoardCell extends StatefulWidget {
     required this.isSuggested,
     required this.activePlayerSymbol,
     required this.cellWidth,
+    required this.playerXIcon,
+    required this.playerOIcon,
     required this.onTap,
   });
 
@@ -3307,31 +3331,20 @@ class _BoardCellState extends State<BoardCell> with SingleTickerProviderStateMix
     final double opacity = isHover ? 0.25 : 1.0;
     final double fontSize = widget.cellWidth * 0.5;
 
-    if (symbol == 'X') {
-      return Text(
-        'X',
-        style: TextStyle(
-          fontSize: fontSize,
-          fontWeight: FontWeight.bold,
-          color: const Color(0xFF06B6D4).withOpacity(opacity),
-          shadows: isHover
-              ? null
-              : [const Shadow(color: Color(0xAA06B6D4), blurRadius: 8)],
-        ),
-      );
-    } else {
-      return Text(
-        'O',
-        style: TextStyle(
-          fontSize: fontSize,
-          fontWeight: FontWeight.bold,
-          color: const Color(0xFFF43F5E).withOpacity(opacity),
-          shadows: isHover
-              ? null
-              : [const Shadow(color: Color(0xAAF43F5E), blurRadius: 8)],
-        ),
-      );
-    }
+    final String displaySymbol = symbol == 'X' ? widget.playerXIcon : widget.playerOIcon;
+    final Color symbolColor = symbol == 'X' ? const Color(0xFF06B6D4) : const Color(0xFFF43F5E);
+
+    return Text(
+      displaySymbol,
+      style: TextStyle(
+        fontSize: fontSize,
+        fontWeight: FontWeight.bold,
+        color: symbolColor.withOpacity(opacity),
+        shadows: isHover
+            ? null
+            : [Shadow(color: symbolColor.withOpacity(0.6), blurRadius: 8)],
+      ),
+    );
   }
 }
 
