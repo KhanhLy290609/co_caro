@@ -577,6 +577,28 @@ class _CaroGamePageState extends State<CaroGamePage> {
     }
   }
 
+  Future<void> _updateDiamonds(int change) async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    int newDiamonds = userDiamonds + change;
+    if (newDiamonds < 0) newDiamonds = 0;
+
+    try {
+      await supabase.from('profiles').update({
+        'diamonds': newDiamonds,
+      }).eq('id', user.id);
+      
+      if (mounted) {
+        setState(() {
+          userDiamonds = newDiamonds;
+        });
+      }
+    } catch (e) {
+      print('Lỗi cập nhật kim cương: $e');
+    }
+  }
+
   @override
   void dispose() {
     _roomIdController.dispose();
@@ -671,6 +693,13 @@ class _CaroGamePageState extends State<CaroGamePage> {
           );
         }
       } else {
+        if (isVSBot) {
+          if (isXTurn) {
+            _updateDiamonds(-5);
+          } else {
+            _updateDiamonds(10);
+          }
+        }
         _showEndGameDialog(
           'Hết Giờ! ⏰',
           'Người chơi $losingSymbol đã hết thời gian suy nghĩ và bị xử thua!',
@@ -919,6 +948,15 @@ class _CaroGamePageState extends State<CaroGamePage> {
         });
       } else {
         _showEndGameDialog(title, message, winnerSymbol);
+      }
+
+      // Cập nhật kim cương ở chế độ Online
+      if (isOnlineMode) {
+        if (winnerSymbol == mySymbol) {
+          _updateDiamonds(10);
+        } else if (winnerSymbol.isNotEmpty) {
+          _updateDiamonds(-5);
+        }
       }
     }
 
@@ -1358,6 +1396,7 @@ class _CaroGamePageState extends State<CaroGamePage> {
             winningCells = winningCombo;
             gameOver = true;
             oWins++;
+            _updateDiamonds(-5);
             
             // Kích hoạt pháo hoa
             _showFireworks = true;
@@ -1957,6 +1996,22 @@ class _CaroGamePageState extends State<CaroGamePage> {
               ],
             ),
           ],
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.diamond_rounded, color: Color(0xFF06B6D4), size: 18),
+              const SizedBox(width: 6),
+              Text(
+                'Kim cương: $userDiamonds 💎',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          )
         ],
       ),
     );
@@ -2476,8 +2531,14 @@ class _CaroGamePageState extends State<CaroGamePage> {
           gameOver = true;
           if (currentSymbol == 'X') {
             xWins++;
+            if (isVSBot) {
+              _updateDiamonds(10);
+            }
           } else {
             oWins++;
+            if (isVSBot) {
+              _updateDiamonds(-5);
+            }
           }
           
           // Kích hoạt pháo hoa
