@@ -522,12 +522,59 @@ class _CaroGamePageState extends State<CaroGamePage> {
   bool isBotEasy = true; // Độ khó của máy (true: Dễ, false: Khó)
   bool _isBotThinking = false; // Trạng thái máy đang suy nghĩ
 
+  // --- Các biến quản lý thông tin Profile người dùng ---
+  int userDiamonds = 0;
+  List<String> unlockedIcons = ['X', 'O'];
+  String selectedIcon = 'X';
+
   @override
   void initState() {
     super.initState();
     myPlayerId = '${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(1000)}';
     _initGameData();
+    _fetchOrCreateProfile();
     _startTimer(); // Khởi chạy timer ban đầu cho X đi trước
+  }
+
+  Future<void> _fetchOrCreateProfile() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final response = await supabase
+          .from('profiles')
+          .select()
+          .eq('id', user.id)
+          .maybeSingle();
+
+      if (response == null) {
+        // Chưa có profile -> Tạo mới mặc định
+        final newProfile = {
+          'id': user.id,
+          'diamonds': 0,
+          'unlocked_icons': ['X', 'O'],
+          'selected_icon': 'X',
+        };
+        await supabase.from('profiles').insert(newProfile);
+        if (mounted) {
+          setState(() {
+            userDiamonds = 0;
+            unlockedIcons = ['X', 'O'];
+            selectedIcon = 'X';
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            userDiamonds = response['diamonds'] ?? 0;
+            unlockedIcons = List<String>.from(response['unlocked_icons'] ?? ['X', 'O']);
+            selectedIcon = response['selected_icon'] ?? 'X';
+          });
+        }
+      }
+    } catch (e) {
+      print('Lỗi tải thông tin cá nhân: $e');
+    }
   }
 
   @override
