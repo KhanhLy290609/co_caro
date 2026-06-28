@@ -526,6 +526,7 @@ class _CaroGamePageState extends State<CaroGamePage> {
   int userDiamonds = 0;
   List<String> unlockedIcons = ['X', 'O'];
   String selectedIcon = 'X';
+  bool useDatabaseTable = true;
 
   @override
   void initState() {
@@ -561,6 +562,7 @@ class _CaroGamePageState extends State<CaroGamePage> {
             userDiamonds = 0;
             unlockedIcons = ['X', 'O'];
             selectedIcon = 'X';
+            useDatabaseTable = true;
           });
         }
       } else {
@@ -569,11 +571,21 @@ class _CaroGamePageState extends State<CaroGamePage> {
             userDiamonds = response['diamonds'] ?? 0;
             unlockedIcons = List<String>.from(response['unlocked_icons'] ?? ['X', 'O']);
             selectedIcon = response['selected_icon'] ?? 'X';
+            useDatabaseTable = true;
           });
         }
       }
     } catch (e) {
-      print('Lỗi tải thông tin cá nhân: $e');
+      print('Lỗi tải thông tin cá nhân từ DB, chuyển sang fallback userMetadata: $e');
+      final meta = user.userMetadata;
+      if (mounted) {
+        setState(() {
+          userDiamonds = meta?['diamonds'] ?? 0;
+          unlockedIcons = List<String>.from(meta?['unlocked_icons'] ?? ['X', 'O']);
+          selectedIcon = meta?['selected_icon'] ?? 'X';
+          useDatabaseTable = false;
+        });
+      }
     }
   }
 
@@ -584,18 +596,40 @@ class _CaroGamePageState extends State<CaroGamePage> {
     int newDiamonds = userDiamonds + change;
     if (newDiamonds < 0) newDiamonds = 0;
 
+    if (useDatabaseTable) {
+      try {
+        await supabase.from('profiles').update({
+          'diamonds': newDiamonds,
+        }).eq('id', user.id);
+        
+        if (mounted) {
+          setState(() {
+            userDiamonds = newDiamonds;
+          });
+        }
+        return;
+      } catch (e) {
+        print('Lỗi cập nhật DB, chuyển sang fallback userMetadata: $e');
+        useDatabaseTable = false;
+      }
+    }
+
+    // Fallback: cập nhật user_metadata
     try {
-      await supabase.from('profiles').update({
-        'diamonds': newDiamonds,
-      }).eq('id', user.id);
-      
+      await supabase.auth.updateUser(UserAttributes(
+        data: {
+          'diamonds': newDiamonds,
+          'unlocked_icons': unlockedIcons,
+          'selected_icon': selectedIcon,
+        },
+      ));
       if (mounted) {
         setState(() {
           userDiamonds = newDiamonds;
         });
       }
     } catch (e) {
-      print('Lỗi cập nhật kim cương: $e');
+      print('Lỗi cập nhật userMetadata: $e');
     }
   }
 
@@ -1817,9 +1851,9 @@ class _CaroGamePageState extends State<CaroGamePage> {
                   value: 'profile',
                   child: Row(
                     children: [
-                      Icon(Icons.lock_reset_rounded, size: 18, color: Color(0xFF06B6D4)),
+                      Icon(Icons.storefront_rounded, size: 18, color: Color(0xFF06B6D4)),
                       SizedBox(width: 8),
-                      Text('Đổi mật khẩu', style: TextStyle(fontSize: 14)),
+                      Text('Cửa hàng & Hồ sơ', style: TextStyle(fontSize: 14)),
                     ],
                   ),
                 ),
@@ -1848,6 +1882,7 @@ class _CaroGamePageState extends State<CaroGamePage> {
                         initialDiamonds: userDiamonds,
                         initialUnlockedIcons: unlockedIcons,
                         initialSelectedIcon: selectedIcon,
+                        useDatabaseTable: useDatabaseTable,
                         onProfileUpdated: (diamonds, unlocked, selected) {
                           setState(() {
                             userDiamonds = diamonds;

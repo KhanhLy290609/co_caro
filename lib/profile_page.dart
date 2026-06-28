@@ -6,6 +6,7 @@ class ProfilePage extends StatefulWidget {
   final int initialDiamonds;
   final List<String> initialUnlockedIcons;
   final String initialSelectedIcon;
+  final bool useDatabaseTable;
   final Function(int diamonds, List<String> unlockedIcons, String selectedIcon)? onProfileUpdated;
 
   const ProfilePage({
@@ -14,6 +15,7 @@ class ProfilePage extends StatefulWidget {
     this.initialDiamonds = 0,
     this.initialUnlockedIcons = const ['X', 'O'],
     this.initialSelectedIcon = 'X',
+    this.useDatabaseTable = true,
     this.onProfileUpdated,
   });
 
@@ -36,6 +38,7 @@ class _ProfilePageState extends State<ProfilePage> {
   late int _diamonds;
   late List<String> _unlockedIcons;
   late String _selectedIcon;
+  late bool _useDatabaseTable;
 
   final List<Map<String, dynamic>> _shopItems = [
     {'icon': '⭐', 'price': 5},
@@ -58,6 +61,7 @@ class _ProfilePageState extends State<ProfilePage> {
     _diamonds = widget.initialDiamonds;
     _unlockedIcons = List<String>.from(widget.initialUnlockedIcons);
     _selectedIcon = widget.initialSelectedIcon;
+    _useDatabaseTable = widget.useDatabaseTable;
   }
 
   @override
@@ -82,11 +86,42 @@ class _ProfilePageState extends State<ProfilePage> {
     final newDiamonds = _diamonds - price;
     final newUnlocked = List<String>.from(_unlockedIcons)..add(icon);
 
+    if (_useDatabaseTable) {
+      try {
+        await client.from('profiles').update({
+          'diamonds': newDiamonds,
+          'unlocked_icons': newUnlocked,
+        }).eq('id', user.id);
+
+        setState(() {
+          _diamonds = newDiamonds;
+          _unlockedIcons = newUnlocked;
+        });
+
+        widget.onProfileUpdated?.call(_diamonds, _unlockedIcons, _selectedIcon);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Mua thành công icon $icon! 🎉')),
+          );
+        }
+        setState(() => _isLoading = false);
+        return;
+      } catch (e) {
+        print('Lỗi mua icon từ DB, chuyển sang fallback userMetadata: $e');
+        _useDatabaseTable = false;
+      }
+    }
+
+    // Fallback: update user metadata
     try {
-      await client.from('profiles').update({
-        'diamonds': newDiamonds,
-        'unlocked_icons': newUnlocked,
-      }).eq('id', user.id);
+      await client.auth.updateUser(UserAttributes(
+        data: {
+          'diamonds': newDiamonds,
+          'unlocked_icons': newUnlocked,
+          'selected_icon': _selectedIcon,
+        },
+      ));
 
       setState(() {
         _diamonds = newDiamonds;
@@ -94,10 +129,10 @@ class _ProfilePageState extends State<ProfilePage> {
       });
 
       widget.onProfileUpdated?.call(_diamonds, _unlockedIcons, _selectedIcon);
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Mua thành công icon $icon! 🎉')),
+          SnackBar(content: Text('Mua thành công icon $icon! 🎉 (Metadata)')),
         );
       }
     } catch (e) {
@@ -126,20 +161,50 @@ class _ProfilePageState extends State<ProfilePage> {
       _isLoading = true;
     });
 
+    if (_useDatabaseTable) {
+      try {
+        await client.from('profiles').update({
+          'selected_icon': icon,
+        }).eq('id', user.id);
+
+        setState(() {
+          _selectedIcon = icon;
+        });
+
+        widget.onProfileUpdated?.call(_diamonds, _unlockedIcons, _selectedIcon);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Đã chọn cờ đại diện là $icon!')),
+          );
+        }
+        setState(() => _isLoading = false);
+        return;
+      } catch (e) {
+        print('Lỗi chọn icon từ DB, chuyển sang fallback userMetadata: $e');
+        _useDatabaseTable = false;
+      }
+    }
+
+    // Fallback: update user metadata
     try {
-      await client.from('profiles').update({
-        'selected_icon': icon,
-      }).eq('id', user.id);
+      await client.auth.updateUser(UserAttributes(
+        data: {
+          'diamonds': _diamonds,
+          'unlocked_icons': _unlockedIcons,
+          'selected_icon': icon,
+        },
+      ));
 
       setState(() {
         _selectedIcon = icon;
       });
 
       widget.onProfileUpdated?.call(_diamonds, _unlockedIcons, _selectedIcon);
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Đã chọn cờ đại diện là $icon!')),
+          SnackBar(content: Text('Đã chọn cờ đại diện là $icon! (Metadata)')),
         );
       }
     } catch (e) {
