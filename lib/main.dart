@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'profile_page.dart';
+import 'shop_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
