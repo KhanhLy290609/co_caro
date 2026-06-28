@@ -1657,78 +1657,94 @@ class _CaroGamePageState extends State<CaroGamePage> {
         Positioned(
           top: 12,
           right: 12,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 280),
-            child: Material(
+          child: Theme(
+            data: Theme.of(context).copyWith(
+              cardColor: const Color(0xFF1E293B),
+            ),
+            child: PopupMenuButton<String>(
+              tooltip: 'Tài khoản',
+              offset: const Offset(0, 50),
               color: const Color(0xFF1E293B),
-              elevation: 4,
-              borderRadius: BorderRadius.circular(24),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Flexible(
-                      child: Tooltip(
-                        message: 'Xem thông tin cá nhân / Đổi mật khẩu',
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (context) => const ProfilePage(),
-                              ),
-                            );
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  Icons.account_circle_outlined,
-                                  size: 18,
-                                  color: Color(0xFF06B6D4),
-                                ),
-                                const SizedBox(width: 8),
-                                Flexible(
-                                  child: Text(
-                                    userEmail,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Tooltip(
-                      message: 'Dang xuat',
-                      child: IconButton(
-                        visualDensity: VisualDensity.compact,
-                        constraints: const BoxConstraints(
-                          minWidth: 32,
-                          minHeight: 32,
-                        ),
-                        padding: EdgeInsets.zero,
-                        onPressed: _logout,
-                        icon: const Icon(
-                          Icons.logout,
-                          size: 18,
-                          color: Color(0xFFFCA5A5),
-                        ),
-                      ),
-                    ),
-                  ],
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: const BorderSide(color: Color(0xFF334155)),
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFF334155), width: 1.5),
+                ),
+                child: const CircleAvatar(
+                  radius: 18,
+                  backgroundColor: Color(0xFF1E293B),
+                  child: Icon(
+                    Icons.person_outline_rounded,
+                    color: Color(0xFF06B6D4),
+                    size: 20,
+                  ),
                 ),
               ),
+              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                PopupMenuItem<String>(
+                  enabled: false,
+                  child: Row(
+                    children: [
+                      const Icon(Icons.email_outlined, size: 16, color: Color(0xFF64748B)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          userEmail,
+                          style: const TextStyle(
+                            color: Color(0xFF94A3B8),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(),
+                const PopupMenuItem<String>(
+                  value: 'profile',
+                  child: Row(
+                    children: [
+                      Icon(Icons.lock_reset_rounded, size: 18, color: Color(0xFF06B6D4)),
+                      SizedBox(width: 8),
+                      Text('Đổi mật khẩu', style: TextStyle(fontSize: 14)),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'logout',
+                  child: Row(
+                    children: [
+                      Icon(Icons.logout_rounded, size: 18, color: Color(0xFFF43F5E)),
+                      SizedBox(width: 8),
+                      Text(
+                        'Đăng xuất',
+                        style: TextStyle(
+                          color: Color(0xFFF43F5E),
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              onSelected: (String value) {
+                if (value == 'profile') {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const ProfilePage(),
+                    ),
+                  );
+                } else if (value == 'logout') {
+                  _logout();
+                }
+              },
             ),
           ),
         ),
