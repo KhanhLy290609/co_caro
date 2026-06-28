@@ -31,7 +31,58 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _changePassword() async {
     if (!_formKey.currentState!.validate() || _isLoading) return;
-    // Logic Supabase se duoc implement o Task 2
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    final client = widget.supabaseClient ?? Supabase.instance.client;
+
+    try {
+      final email = client.auth.currentUser?.email;
+      if (email == null) {
+        throw const AuthException('Không tìm thấy thông tin phiên đăng nhập. Vui lòng đăng nhập lại.');
+      }
+
+      // 1. Authenticate with current password
+      await client.auth.signInWithPassword(
+        email: email,
+        password: _currentPasswordController.text,
+      );
+
+      // 2. Update to new password
+      await client.auth.updateUser(
+        UserAttributes(password: _newPasswordController.text),
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đổi mật khẩu thành công! Vui lòng đăng nhập lại.')),
+        );
+      }
+
+      // 3. Log out and navigate back
+      await client.auth.signOut();
+      
+      if (mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+    } on AuthException catch (e) {
+      setState(() {
+        _errorMessage = e.message;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Không thể đổi mật khẩu. Vui lòng thử lại.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   @override
